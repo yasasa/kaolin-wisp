@@ -12,11 +12,13 @@ parser = parse_options(return_parser=True)
 args, args_str = argparse_to_str(parser)
 nef, tracer, pipeline = get_model_from_config(args)
 
-coords = torch.randn(10, 1, 3) * 0.01
-dir = torch.randn(10, 3).cuda().requires_grad_(True)
+coords = torch.tensor([0.5, 0.5, 0.5]).view(1, 1, 3)
+dir = torch.randn(1, 3).cuda().requires_grad_(True)
 coords = coords.cuda().requires_grad_(True)
-for params in pipeline.parameters():
-    params.requires_grad = False
+data = torch.ones_like(nef.grid.codebook[0].data)
+data[4:] *= 2.
+nef.grid.codebook[0].data = data
+print(nef.grid.codebook[0].data)
 value = nef.rgba(coords, dir, lod_idx=0)['rgb']
 value.sum().backward()
 print(value, coords.grad, dir.grad)
@@ -26,4 +28,4 @@ def f(x):
     return nef.rgba(x, dir)['rgb'].sum()
 
 
-torch.autograd.gradcheck(f, coords, eps=1e-5, atol=1e-2)
+torch.autograd.gradcheck(f, coords, eps=1e-2, atol=1e-2)

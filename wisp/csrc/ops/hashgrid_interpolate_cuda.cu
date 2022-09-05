@@ -147,6 +147,7 @@ __device__ void calc_grad_wrt_x_(int64_t feat_idx, int64_t feature_dim, float3 x
     float c0 = c00 * _x.y + c10 * x_.y;
     float c1 = c01 * _x.y + c11 * x_.y;
     atomicAdd(grad_x_ + 2,gradout * (c1 - c0));
+    printf("%f %f %f\n", c0, c1, gradout);
 }
 
 // gradient of interpolated features w.r.t grid points

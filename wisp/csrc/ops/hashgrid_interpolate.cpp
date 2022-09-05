@@ -79,7 +79,7 @@ std::vector<std::pair<at::Tensor, at::Tensor>> hashgrid_interpolate_backward_cud
                 at::zeros(
                     {codebook_shapes[i], feature_dim}, coords.options()),
                  at::zeros(
-                    {coords.size(0), 3},          coords.options())
+                    {coords.size(0), 3},coords.options())
             });
     }
     int32_t codebook_size = pow(2, codebook_bitwidth);

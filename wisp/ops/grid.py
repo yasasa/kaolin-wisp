@@ -109,9 +109,7 @@ class HashGridInterpolate(torch.autograd.Function):
         grad_codebook, grad_coords = zip(*grads)
         print(grad_coords[0].shape)
         print(coords.shape, feature_dim)
-        grad_coords = sum(grad_coords)
-
-        return (grad_coords.sum(1), None, None, None, *grad_codebook)
+        return (sum(grad_coords), None, None, None, *grad_codebook)
 
 
 def hashgrid(coords, resolutions, codebook_bitwidth, lod_idx, codebook):
