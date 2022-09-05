@@ -14,7 +14,7 @@
 namespace wisp {
 
 void hashgrid_interpolate_cuda_impl(
-    int64_t num_coords, 
+    int64_t num_coords,
     int32_t codebook_size,
     int64_t feature_dim,
     int32_t resolution,
@@ -25,7 +25,7 @@ void hashgrid_interpolate_cuda_impl(
     at::Tensor feats);
 
 void hashgrid_interpolate_backward_cuda_impl(
-    int64_t num_coords, 
+    int64_t num_coords,
     int32_t codebook_size,
     int64_t feature_dim,
     int32_t resolution,
@@ -33,7 +33,9 @@ void hashgrid_interpolate_backward_cuda_impl(
     int32_t num_lods,
     at::Tensor coords,
     at::Tensor grad_output,
-    at::Tensor grad_codebook);
+    at::Tensor grad_codebook,
+    at::Tensor codebook,
+    at::Tensor grad_coords);
 
 at::Tensor hashgrid_interpolate_cuda(
     at::Tensor coords,
@@ -41,7 +43,7 @@ at::Tensor hashgrid_interpolate_cuda(
     std::vector<int32_t> resolution,
     int32_t codebook_bitwidth) {
 #ifdef WITH_CUDA
-    int64_t num_coords = coords.size(0);  
+    int64_t num_coords = coords.size(0);
     int64_t feature_dim = codebook[0].size(1);
     int32_t num_lods = resolution.size();
     at::Tensor feats = at::empty({num_coords, codebook[0].size(1) * int(resolution.size())}, coords.options());
@@ -58,26 +60,33 @@ at::Tensor hashgrid_interpolate_cuda(
 #endif  // WITH_CUDA
 }
 
-std::vector<at::Tensor> hashgrid_interpolate_backward_cuda(
+std::vector<std::pair<at::Tensor, at::Tensor>> hashgrid_interpolate_backward_cuda(
     at::Tensor coords,
     at::Tensor grad_output,
     std::vector<int32_t> resolution,
     std::vector<int32_t> codebook_shapes,
+    std::vector<at::Tensor> codebook,
     int32_t codebook_bitwidth,
     int32_t feature_dim) {
 #ifdef WITH_CUDA
-    int64_t num_coords = coords.size(0);  
+    int64_t num_coords = coords.size(0);
     int32_t num_lods = resolution.size();
 
-    std::vector<at::Tensor> grad_codebook;
+    std::vector<std::pair<at::Tensor, at::Tensor>> grad_codebook;
     for (int32_t i=0; i < resolution.size(); ++i) {
-        grad_codebook.push_back(at::zeros({codebook_shapes[i], feature_dim}, coords.options()));
+        grad_codebook.push_back(
+            {
+                at::zeros(
+                    {codebook_shapes[i], feature_dim}, coords.options()),
+                 at::zeros(
+                    {coords.size(0), 3},          coords.options())
+            });
     }
     int32_t codebook_size = pow(2, codebook_bitwidth);
 
     for (int32_t i=0; i < resolution.size(); ++i) {
-        hashgrid_interpolate_backward_cuda_impl(num_coords, codebook_size, feature_dim, resolution[i], i, num_lods, 
-                coords, grad_output, grad_codebook[i]);
+        hashgrid_interpolate_backward_cuda_impl(num_coords, codebook_size, feature_dim, resolution[i], i, num_lods,
+                coords, grad_output, grad_codebook[i].first, codebook[i], grad_codebook[i].second);
     }
     return grad_codebook;
 #else
