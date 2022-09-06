@@ -165,7 +165,7 @@ class MyPlenoxelNeuralField(BaseNeuralField):
               -1.0925484305920792,
               0.5462742152960396]
 
-        sh_basis = torch.zeros((ray_d.shape[0],basis_dim))
+        sh_basis = torch.zeros((ray_d.shape[0],basis_dim), device=ray_d.device)
 
         sh_basis[:,0].fill_(C0)
         x, y, z = ray_d[:,0], ray_d[:,1], ray_d[:,2]
@@ -221,16 +221,22 @@ class MyPlenoxelNeuralField(BaseNeuralField):
             # ReLU is used to ensure predicted sample colors and densities are 
             # between 0 and 1.
             BASIS_DIM = 9
-            assert self.effective_feature_dim == 28
+            if BASIS_DIM == 9:
+                assert self.effective_feature_dim == 28, "effective_feature_dim: {}".format(self.effective_feature_dim)
+            elif BASIS_DIM == 4:
+                assert self.effective_feature_dim == 13, "effective_feature_dim: {}".format(self.effective_feature_dim)
             
             # Density stored as scalar in feature vec
-            density = torch.relu(feats[:,27]).reshape(batch, num_samples, -1)
+            density = torch.relu(feats[:,self.effective_feature_dim-1]).reshape(batch, num_samples, -1)
 
             # Extract SH coeffs from feature vec, compute SH basis using viewing 
             # direction, and compute color as sum of basis weighted by coeffs.
-            sh_coeffs = feats[:,0:27].reshape(-1, 3, BASIS_DIM)
-            sh_basis = self.calc_sh_basis(ray_d, basis_dim=BASIS_DIM).cuda().reshape(-1, 1, BASIS_DIM)
-            colors = torch.relu(torch.sum(sh_coeffs * sh_basis, dim=2)).reshape(batch, num_samples, -1)
+            sh_coeffs = feats[:,0:self.effective_feature_dim-1].reshape(-1, 3, BASIS_DIM)
+            sh_basis = self.calc_sh_basis(ray_d, basis_dim=BASIS_DIM).reshape(-1, 1, BASIS_DIM)
+            timer.check("rf_rgba_sh_basis")
+            # TODO: Plenoxels uses ReLU instead of sigmoid, but not sure how they keep color less than 1
+            colors = torch.sigmoid(torch.sum(sh_coeffs * sh_basis, dim=2)).reshape(batch, num_samples, -1)
+            timer.check("rf_rgba_sh_sumprod")
 
         else:
             # Optionally concat the positions to the embedding, and also concatenate embedded view directions.

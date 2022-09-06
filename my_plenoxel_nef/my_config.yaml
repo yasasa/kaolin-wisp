@@ -53,6 +53,7 @@ trainer:
     save_every: 10
     render_every: 10
 
+# Octree default:
 # grid:
 #     grid_type: 'OctreeGrid'
 #     interpolation_type: 'linear'
@@ -61,6 +62,7 @@ trainer:
 #     feature_std: 0.01
 #     base_lod: 5
 #     num_lods: 4
+# HashGrid default:
 # grid:
 #     grid_type: 'HashGrid'
 #     interpolation_type: 'linear'
@@ -71,16 +73,47 @@ trainer:
 #     tree_type: 'geometric'
 #     max_grid_res: 2048
 #     codebook_bitwidth: 19
+# Triplanar default
+# grid:
+#     grid_type: 'TriplanarGrid'
+#     interpolation_type: 'linear'
+#     multiscale_type: 'sum'
+#     feature_dim: 4
+#     feature_std: 0.01
+#     base_lod: 5
+#     num_lods: 4
+# Plenoxel HashGrid 1:
+# grid:
+#     grid_type: 'HashGrid'
+#     interpolation_type: 'linear'
+#     multiscale_type: 'sum'
+#     feature_dim: 28
+#     feature_std: 0.01
+#     num_lods: 4
+#     tree_type: 'geometric'
+#     max_grid_res: 2048
+#     codebook_bitwidth: 19
+# Plenoxel HashGrid 2:
+# grid:
+#     grid_type: 'HashGrid'
+#     interpolation_type: 'linear'
+#     multiscale_type: 'sum'
+#     feature_dim: 28
+#     feature_std: 0.01
+#     base_lod: 7  # 2
+#     num_lods: 2
+#     tree_type: 'quad'  # geometric
+#     max_grid_res: 2048
+#     codebook_bitwidth: 19
+#Plenoxel Octree:
 grid:
-    grid_type: 'HashGrid'
+    grid_type: 'OctreeGrid'
     interpolation_type: 'linear'
     multiscale_type: 'sum'
     feature_dim: 28
     feature_std: 0.01
-    num_lods: 4
-    tree_type: 'geometric'
-    max_grid_res: 2048
-    codebook_bitwidth: 19
+    base_lod: 7  # 5
+    num_lods: 2  # 4
 
 net:
     nef_type: 'MyPlenoxelNeuralField'
