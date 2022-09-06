@@ -144,6 +144,50 @@ class MyPlenoxelNeuralField(BaseNeuralField):
         """
         self._register_forward_function(self.rgba, ["density", "rgb"])
 
+    def calc_sh_basis(self, ray_d, basis_dim=9):
+        """Compute spherical harmonic basis for given viewing direction.
+        Based on calc_sh from https://github.com/sxyu/svox2/blob/master/svox2/csrc/include/render_util.cuh
+
+        Args:
+            ray_d (torch.FloatTensor): packed tensor of shape [batch, 3]
+            basis_dim (float): basis dimension for spherical harmonics
+        
+        Returns:
+            sh_basis tensor of shape [batch, basis_dim] 
+        """
+
+        # SH Coefficients from https://github.com/google/spherical-harmonics
+        C0 = 0.28209479177387814
+        C1 = 0.4886025119029199
+        C2 = [1.0925484305920792,
+              -1.0925484305920792,
+              0.31539156525252005,
+              -1.0925484305920792,
+              0.5462742152960396]
+
+        sh_basis = torch.zeros((ray_d.shape[0],basis_dim))
+
+        sh_basis[:,0].fill_(C0)
+        x, y, z = ray_d[:,0], ray_d[:,1], ray_d[:,2]
+        xx, yy, zz = x * x, y * y, z * z
+        xy, yz, xz = x * y, y * z, x * z
+
+        if basis_dim == 9:
+            sh_basis[:,4] = C2[0] * xy
+            sh_basis[:,5] = C2[1] * yz
+            sh_basis[:,6] = C2[2] * (2.0 * zz - xx - yy)
+            sh_basis[:,7] = C2[3] * xz
+            sh_basis[:,8] = C2[4] * (xx - yy)
+
+        if basis_dim == 4 or basis_dim == 9:
+            sh_basis[:,1] = -C1 * y
+            sh_basis[:,2] = C1 * z
+            sh_basis[:,3] = -C1 * x
+        else:
+            raise ValueError
+
+        return sh_basis
+
     def rgba(self, coords, ray_d, pidx=None, lod_idx=None):
         """Compute color and density [particles / vol] for the provided coordinates.
 
@@ -169,26 +213,46 @@ class MyPlenoxelNeuralField(BaseNeuralField):
         feats = self.grid.interpolate(coords, lod_idx).reshape(-1, self.effective_feature_dim)
         timer.check("rf_rgba_interpolate")
 
-        # Optionally concat the positions to the embedding, and also concatenate embedded view directions.
-        if self.position_input:
-            fdir = torch.cat([feats,
-                self.pos_embedder(coords.reshape(-1, 3)),
-                self.view_embedder(-ray_d)[:,None].repeat(1, num_samples, 1).view(-1, self.view_embed_dim)], dim=-1)
-        else: 
-            fdir = torch.cat([feats,
-                self.view_embedder(-ray_d)[:,None].repeat(1, num_samples, 1).view(-1, self.view_embed_dim)], dim=-1)
-        timer.check("rf_rgba_embed_cat")
-        
-        # Decode high-dimensional vectors to RGBA.
-        rgba = self.decoder(fdir)
-        timer.check("rf_rgba_decode")
+        plenoxel_model = True
+        if plenoxel_model:
+            # Plenoxel features are a scalar density and a vector of spherical 
+            # harmonic coefficients for each color channel. SH of degree 2 is used,
+            # requiring 9 coefficients per color channel for 27 coeffs total.
+            # ReLU is used to ensure predicted sample colors and densities are 
+            # between 0 and 1.
+            BASIS_DIM = 9
+            assert self.effective_feature_dim == 28
+            
+            # Density stored as scalar in feature vec
+            density = torch.relu(feats[:,27]).reshape(batch, num_samples, -1)
 
-        # Colors are values [0, 1] floats
-        colors = torch.sigmoid(rgba[...,:3]).reshape(batch, num_samples, -1)
+            # Extract SH coeffs from feature vec, compute SH basis using viewing 
+            # direction, and compute color as sum of basis weighted by coeffs.
+            sh_coeffs = feats[:,0:27].reshape(-1, 3, BASIS_DIM)
+            sh_basis = self.calc_sh_basis(ray_d, basis_dim=BASIS_DIM).cuda().reshape(-1, 1, BASIS_DIM)
+            colors = torch.relu(torch.sum(sh_coeffs * sh_basis, dim=2)).reshape(batch, num_samples, -1)
 
-        # Density is [particles / meter], so need to be multiplied by distance
-        density = torch.relu(rgba[...,3:4]).reshape(batch, num_samples, -1)
-        timer.check("rf_rgba_activation")
+        else:
+            # Optionally concat the positions to the embedding, and also concatenate embedded view directions.
+            if self.position_input:
+                fdir = torch.cat([feats,
+                    self.pos_embedder(coords.reshape(-1, 3)),
+                    self.view_embedder(-ray_d)[:,None].repeat(1, num_samples, 1).view(-1, self.view_embed_dim)], dim=-1)
+            else: 
+                fdir = torch.cat([feats,
+                    self.view_embedder(-ray_d)[:,None].repeat(1, num_samples, 1).view(-1, self.view_embed_dim)], dim=-1)
+            timer.check("rf_rgba_embed_cat")
+            
+            # Decode high-dimensional vectors to RGBA.
+            rgba = self.decoder(fdir)
+            timer.check("rf_rgba_decode")
+
+            # Colors are values [0, 1] floats
+            colors = torch.sigmoid(rgba[...,:3]).reshape(batch, num_samples, -1)
+
+            # Density is [particles / meter], so need to be multiplied by distance
+            density = torch.relu(rgba[...,3:4]).reshape(batch, num_samples, -1)
+            timer.check("rf_rgba_activation")
         
         return dict(rgb=colors, density=density)
 

@@ -61,13 +61,23 @@ trainer:
 #     feature_std: 0.01
 #     base_lod: 5
 #     num_lods: 4
+# grid:
+#     grid_type: 'HashGrid'
+#     interpolation_type: 'linear'
+#     multiscale_type: 'cat'
+#     feature_dim: 2
+#     feature_std: 0.01
+#     num_lods: 16
+#     tree_type: 'geometric'
+#     max_grid_res: 2048
+#     codebook_bitwidth: 19
 grid:
     grid_type: 'HashGrid'
     interpolation_type: 'linear'
-    multiscale_type: 'cat'
-    feature_dim: 2
+    multiscale_type: 'sum'
+    feature_dim: 28
     feature_std: 0.01
-    num_lods: 16
+    num_lods: 4
     tree_type: 'geometric'
     max_grid_res: 2048
     codebook_bitwidth: 19
