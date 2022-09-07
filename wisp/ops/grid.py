@@ -107,8 +107,6 @@ class HashGridInterpolate(torch.autograd.Function):
             [c_[0] for c_ in codebook_shapes], ctx.codebook, codebook_bitwidth,
             feature_dim)
         grad_codebook, grad_coords = zip(*grads)
-        print(grad_coords[0].shape)
-        print(coords.shape, feature_dim)
         return (sum(grad_coords), None, None, None, *grad_codebook)
 
 

@@ -52,7 +52,7 @@ grid:
     grid_type: 'HashGrid'
     interpolation_type: 'linear'
     multiscale_type: 'sum'
-    feature_dim: 2
+    feature_dim: 1
     feature_std: 0.01
     num_lods: 1
     tree_type: 'geometric'

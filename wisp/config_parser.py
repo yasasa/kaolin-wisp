@@ -607,7 +607,7 @@ def get_model_from_config(args):
         else:
             pipeline.load_state_dict(torch.load(args.pretrained))
 
-    pipeline.nef.grid.init_from_resolutions([2])
+    pipeline.nef.grid.init_from_resolutions([4])
     pipeline.to(device)
     return nef, tracer, pipeline
 
