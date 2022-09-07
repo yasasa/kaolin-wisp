@@ -598,7 +598,7 @@ def get_model_from_config(args, res):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     nef = globals()[args.nef_type](**vars(args))
     tracer = globals()[args.tracer_type](**vars(args))
-    nef.grid.init_from_resolutions([100])
+    nef.grid.init_from_resolutions([res])
     pipeline = Pipeline(nef, tracer)
 
     if args.pretrained:

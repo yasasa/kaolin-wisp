@@ -103,28 +103,7 @@ hashgrid_interpolate_cuda_kernel(
                 c[6] * c110 +
                 c[7] * c111;
             feats[num_lods*i*feature_dim+feature_dim*lod_idx+j] = feat;
-
-/*
-            printf("0: %f \n 1: %f \n 2: %f \n 3: %f \n 4: %f \n 5: %f \n 6: %f \n 7: %f\n",
-                   c[0], c[1], c[2], c[3], c[4],
-                   c[5], c[6], c[7]);
-                   */
         }
-
-/*
-        // --- Yasasa - Temp debug
-        printf("----- FORWARD ------\n");
-        printf("0: %d \n 1: %d \n 2: %d \n 3: %d \n 4: %d \n 5: %d \n 6: %d \n 7: %d\n",
-               corner_idx[0], corner_idx[1], corner_idx[2], corner_idx[3], corner_idx[4],
-               corner_idx[5], corner_idx[6], corner_idx[7]);
-
-
-        printf("0: %f \n 1: %f \n 2: %f \n 3: %f \n 4: %f \n 5: %f \n 6: %f \n 7: %f\n",
-               c000, c001, c010, c011, c100,
-               c101, c110, c111);
-        printf("Randomteststuff\n");
-        // Yasasa - Temp debug
-        */
     }
 }
 
@@ -155,13 +134,23 @@ void hashgrid_interpolate_cuda_impl(
         feats.data_ptr<float>()
     );
 }
-// --- Yasasa - interp gradients
+// --- Yasasa - start - interp gradients
+__device__ void
+calc_grad_wrt_x_(
+    int64_t feature_index,
+    int64_t feature_dim,
+    float3 x_, float3 _x,
+    float resolution,
+    int32_t corner_idx[8],
+    float gradout,
+    float* codebook,
+    float* grad_x_){
 
-__device__ void calc_grad_wrt_x_(int64_t feat_idx, float resolution, int64_t feature_dim, float3 x_, float3 _x, int32_t corner_idx[8], float gradout, float* grad_x_, float* codebook){
     float c[8];
-    int64_t j = feat_idx;
+
+    #pragma unroll
     for(int i = 0; i < 8; i++){
-        c[i] = codebook[corner_idx[i]*feature_dim+j];
+        c[i] = codebook[corner_idx[i]*feature_dim + feature_index];
     }
 
     gradout *= resolution / 2.f;
@@ -171,23 +160,14 @@ __device__ void calc_grad_wrt_x_(int64_t feat_idx, float resolution, int64_t fea
                 + _x.y * x_.z * (c[5] - c[1])
                 + x_.y * x_.z * (c[7] - c[3]);
 
-    grad_x_[0] = gradout * x_grad;
-    //atomicAdd(grad_x_, gradout * x_grad);
+    atomicAdd(grad_x_, gradout * x_grad);
 
     auto y_grad = _x.x * _x.z * (c[2] - c[0]) +
                   _x.x * x_.z * (c[3] - c[1]) +
                   x_.x * _x.z * (c[6] - c[4]) +
                   x_.x * x_.z * (c[7] - c[5]);
 
-    float c00 = c[0]*_x.x + c[4]*x_.x;
-    float c01 = c[1]*_x.x + c[5]*x_.x;
-    float c10 = c[2]*_x.x + c[6]*x_.x;
-    float c11 = c[3]*_x.x + c[7]*x_.x;
-   // auto y_grad =  _x.z * (c10 - c00)
-    //             + x_.z * (c11 - c01);
-
-    grad_x_[1] = gradout * y_grad;
-    //atomicAdd(grad_x_ + 1, gradout * y_grad);
+    atomicAdd(grad_x_ + 1, gradout * y_grad);
 
 
     auto z_grad = _x.x * _x.y * (c[1] - c[0]) +
@@ -195,15 +175,10 @@ __device__ void calc_grad_wrt_x_(int64_t feat_idx, float resolution, int64_t fea
                   x_.x * _x.y * (c[5] - c[4]) +
                   x_.x * x_.y * (c[7] - c[6]);
 
-    //float c0 = c00 * _x.y + c10 * x_.y;
-   // float c1 = c01 * _x.y + c11 * x_.y;
-   // auto z_grad = (c1 - c0);
-    grad_x_[2] = gradout * z_grad;
-    //atomicAdd(grad_x_ + 2, gradout * z_grad);
+    atomicAdd(grad_x_ + 2, gradout * z_grad);
 }
-
 // gradient of interpolated features w.r.t grid points
-// --- Yasasa - interp gradients
+// --- Yasasa - end - interp gradients
 __global__ void
 hashgrid_interpolate_backward_cuda_kernel(
     const int64_t num_coords,
@@ -229,8 +204,6 @@ hashgrid_interpolate_backward_cuda_kernel(
         float3 x_ = make_float3(x.x - (float) pos.x, x.y - (float) pos.y, x.z - (float) pos.z);
         float3 _x = make_float3(1.0 - x_.x, 1.0 - x_.y, 1.0 - x_.z);
 
-        //printf("%f %f %f %d %d %d \n", x_.x, x_.y, x_.z, pos.x, pos.y, pos.z);
-
         float coeffs[8];
         coeffs[0] = _x.x * _x.y * _x.z;
         coeffs[1] = _x.x * _x.y * x_.z;
@@ -254,7 +227,7 @@ hashgrid_interpolate_backward_cuda_kernel(
 
         for (uint64_t j=0; j<feature_dim; ++j) {
             float gradout =  grad_output[i*num_lods*feature_dim + lod_idx*feature_dim + j];
-            calc_grad_wrt_x_(j, resolution, feature_dim, x_, _x, corner_idx, gradout, grad_coords + i*3, codebook);
+            calc_grad_wrt_x_(j, feature_dim, x_, _x, resolution, corner_idx, gradout, codebook, grad_coords + i*3);
 #           pragma unroll
             for (int k=0; k<8; ++k) {
                 float grad = gradout * coeffs[k];
