@@ -594,7 +594,7 @@ def get_optimizer_from_config(args):
 
 
 # --- Yasasa - Temp
-def get_model_from_config(args):
+def get_model_from_config(args, res):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     nef = globals()[args.nef_type](**vars(args))
     tracer = globals()[args.tracer_type](**vars(args))
@@ -607,7 +607,7 @@ def get_model_from_config(args):
         else:
             pipeline.load_state_dict(torch.load(args.pretrained))
 
-    pipeline.nef.grid.init_from_resolutions([4])
+    pipeline.nef.grid.init_from_resolutions([res])
     pipeline.to(device)
     return nef, tracer, pipeline
 

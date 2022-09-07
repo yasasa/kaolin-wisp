@@ -10,9 +10,11 @@ from wisp.config_parser import *
 
 torch.manual_seed(123)
 
+res = 6
+
 parser = parse_options(return_parser=True)
 args, args_str = argparse_to_str(parser)
-nef, tracer, pipeline = get_model_from_config(args)
+nef, tracer, pipeline = get_model_from_config(args, res)
 p = np.pi / 6
 coords = torch.tensor([np.pi / 12, np.pi / 12, -0.2]).view(1, 1, 3)
 dir = torch.randn(1, 3).cuda().requires_grad_(True)
@@ -32,19 +34,39 @@ def f(x):
     return nef.grid.interpolate(x, lod_idx=0).sum()
 
 
-def get_grad(f, x):
+@torch.no_grad()
+def df_fd(f, x, eps=1e-4):
+    dg = torch.zeros_like(x)
+    N = x.shape[-1]
+    for i in range(N):
+        e_i = torch.eye(x.shape[0])[i].view(1, N).expand(x.shape[0], N)
+        x1 = x + e_i * eps
+        x2 = x - e_i * eps
+        dg[:, i] = (f(x1) - f(x2)) / (2 * eps)
+
+    return dg
+
+
+def df(f, x):
     x_ = x.clone().requires_grad_(True)
     y = f(x_)
     y.backward()
     return x_.grad
 
 
-torch.autograd.gradcheck(f, coords, eps=1e-2, atol=1e-2)
+sample_points = (torch.rand(1000, 1, 3) * np.pi).clip(
+    -1 + np.pi / 128,
+    (res - 2) / res - np.pi / 128).cuda().requires_grad_(True)
+print(sample_points[0])
+
+torch.autograd.gradcheck(f,
+                         sample_points[0].view(-1, 1, 3),
+                         eps=1e-2,
+                         atol=1e-2)
 
 import matplotlib.pyplot as plt
 
 ps = torch.linspace(-1, 1., 10)
 coords = torch.zeros(10, 1, 3).cuda()
 coords[:, 0, 2] = ps
-y = get_grad(f, coords)
-plt.plot()
+y = df(f, coords)

@@ -104,10 +104,11 @@ hashgrid_interpolate_cuda_kernel(
                 c[7] * c111;
             feats[num_lods*i*feature_dim+feature_dim*lod_idx+j] = feat;
 
-
+/*
             printf("0: %f \n 1: %f \n 2: %f \n 3: %f \n 4: %f \n 5: %f \n 6: %f \n 7: %f\n",
                    c[0], c[1], c[2], c[3], c[4],
                    c[5], c[6], c[7]);
+                   */
         }
 
 /*
@@ -199,7 +200,6 @@ __device__ void calc_grad_wrt_x_(int64_t feat_idx, float resolution, int64_t fea
    // auto z_grad = (c1 - c0);
     grad_x_[2] = gradout * z_grad;
     //atomicAdd(grad_x_ + 2, gradout * z_grad);
-    printf("BACKWARD\n");
 }
 
 // gradient of interpolated features w.r.t grid points
@@ -229,7 +229,7 @@ hashgrid_interpolate_backward_cuda_kernel(
         float3 x_ = make_float3(x.x - (float) pos.x, x.y - (float) pos.y, x.z - (float) pos.z);
         float3 _x = make_float3(1.0 - x_.x, 1.0 - x_.y, 1.0 - x_.z);
 
-        printf("%f %f %f %d %d %d \n", x_.x, x_.y, x_.z, pos.x, pos.y, pos.z);
+        //printf("%f %f %f %d %d %d \n", x_.x, x_.y, x_.z, pos.x, pos.y, pos.z);
 
         float coeffs[8];
         coeffs[0] = _x.x * _x.y * _x.z;
