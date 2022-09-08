@@ -10,6 +10,7 @@
 
 #include <ATen/ATen.h>
 #include <vector>
+#include <algorithm>
 
 namespace wisp {
 
@@ -60,7 +61,7 @@ at::Tensor hashgrid_interpolate_cuda(
 #endif  // WITH_CUDA
 }
 
-std::vector<std::pair<at::Tensor, at::Tensor>> hashgrid_interpolate_backward_cuda(
+std::pair<std::vector<at::Tensor>, at::Tensor> hashgrid_interpolate_backward_cuda(
     at::Tensor coords,
     at::Tensor grad_output,
     std::vector<int32_t> resolution,
@@ -72,23 +73,22 @@ std::vector<std::pair<at::Tensor, at::Tensor>> hashgrid_interpolate_backward_cud
     int64_t num_coords = coords.size(0);
     int32_t num_lods = resolution.size();
 
-    std::vector<std::pair<at::Tensor, at::Tensor>> grad_codebook;
+    std::vector<at::Tensor> grad_codebook;
     for (int32_t i=0; i < resolution.size(); ++i) {
         grad_codebook.push_back(
-            {
                 at::zeros(
-                    {codebook_shapes[i], feature_dim}, coords.options()),
-                 at::zeros(
-                    {coords.size(0), 3},coords.options())
-            });
+                    {codebook_shapes[i], feature_dim}, coords.options()));
     }
+
+    auto grad_coords = at::zeros({coords.size(0), 3}, coords.options());
     int32_t codebook_size = pow(2, codebook_bitwidth);
+
 
     for (int32_t i=0; i < resolution.size(); ++i) {
         hashgrid_interpolate_backward_cuda_impl(num_coords, codebook_size, feature_dim, resolution[i], i, num_lods,
-                coords, grad_output, grad_codebook[i].first, codebook[i], grad_codebook[i].second);
+                coords, grad_output, grad_codebook[i], codebook[i], grad_coords);
     }
-    return grad_codebook;
+    return {grad_codebook, grad_coords};
 #else
     AT_ERROR(__func__);
 #endif  // WITH_CUDA

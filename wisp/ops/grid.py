@@ -102,12 +102,11 @@ class HashGridInterpolate(torch.autograd.Function):
         codebook_shapes = ctx.codebook_shapes
         codebook_bitwidth = ctx.codebook_bitwidth
 
-        grads = wisp_C.ops.hashgrid_interpolate_backward_cuda(
+        grad_codebooks, grad_coords = wisp_C.ops.hashgrid_interpolate_backward_cuda(
             coords.contiguous(), grad_output.contiguous(), resolutions,
             [c_[0] for c_ in codebook_shapes], ctx.codebook, codebook_bitwidth,
             feature_dim)
-        grad_codebook, grad_coords = zip(*grads)
-        return (sum(grad_coords), None, None, None, *grad_codebook)
+        return (grad_coords, None, None, None, *grad_codebooks)
 
 
 def hashgrid(coords, resolutions, codebook_bitwidth, lod_idx, codebook):
