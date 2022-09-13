@@ -71,7 +71,75 @@ if __name__ == "__main__":
 
     # Create the trainer
     trainer = create_trainer(args, scene_state)
+
+    #print(scene_state.graph.cameras.keys())
+
+    TEST_MULTI_OBJ = True
+    if TEST_MULTI_OBJ:
+        import torch
+        from wisp.renderer.core import RendererCore
+        import wisp.renderer.core.renderers
+        from wisp.renderer.core.api import add_to_scene_graph
+        from wisp.ops.image import write_png, write_exr
+
+        height, width = 360, 640
+        core = RendererCore(scene_state)
+        core.resize_canvas(height=height, width=width)
+        core.set_full_resolution()
+        core.redraw()          # Call this every time you add / remove an object
+
+        ##### second object
+
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+        # if args.pretrained:
+        #     if args.model_format == "full":
+        #         pipeline = torch.load(args.pretrained)
+        #     else:
+        #         pipeline.load_state_dict(torch.load(args.pretrained))
+        obj_pretrain_path = "/home/salar/RVL/repos/kaolin-wisp/_results/logs/runs/test-ngp-nerf/20220822-231128/model.pth"
+        pipeline2 = torch.load(obj_pretrain_path)
+        pipeline2.to(device)
+        add_to_scene_graph(scene_state, "object2", pipeline2)
+        core.redraw()          # Call this every time you add / remove an object
+
+        #scene_state.graph.visible_objects['exp_tmp'] = False
+        print(scene_state.graph.visible_objects)
+
+        ##### change camera
+
+        #camera = core.camera
+        camera = scene_state.graph.cameras['0_00000']
+        scene_state.renderer.selected_camera = camera
+        print(camera)
+
+
+        #####
+
+        rb = core.render()     # Obtain a render buffer
+        # See evaluate_metrics() in multiview_trainer.py for examples on how write_png and write_exr are used
+        
+        #rb = rb.reshape(*img.shape[:2], -1)
+                
+        rb.view = None
+        rb.hit = None
+
+        exrdict = rb.cpu().exr_dict()
+        img_out = rb.cpu().image().byte().rgb.numpy()
+        print(img_out.shape)
+
+        # out_name = f"{idx}"
+        # if name is not None:
+        #     out_name += "-" + name
+
+        #write_exr(os.path.join(self.valid_log_dir, out_name + ".exr"), exrdict)
+        # write_png(os.path.join(self.valid_log_dir, out_name + ".png"), rb.cpu().image().byte().rgb.numpy())
+        write_exr("tmp.exr", exrdict)
+        write_png("tmp.png", img_out)
+
+        exit()
             
+
     if not os.environ.get('WISP_HEADLESS') == '1':
         interactive_app = create_app(scene_state, trainer)
         interactive_app.run()

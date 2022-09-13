@@ -213,7 +213,7 @@ class MyPlenoxelNeuralField(BaseNeuralField):
         feats = self.grid.interpolate(coords, lod_idx).reshape(-1, self.effective_feature_dim)
         timer.check("rf_rgba_interpolate")
 
-        plenoxel_model = True
+        plenoxel_model = False
         if plenoxel_model:
             # Plenoxel features are a scalar density and a vector of spherical 
             # harmonic coefficients for each color channel. SH of degree 2 is used,

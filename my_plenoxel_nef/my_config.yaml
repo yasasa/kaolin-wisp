@@ -25,7 +25,7 @@ dataset:
 renderer:
     tracer_type: 'PackedRFTracer'
     num_steps: 512  #512 in ngp_nerf, 16 in nglod
-    raymarch_type: ray  # default is 'voxel'
+    raymarch_type: ray  # default is 'voxel' for all except ngp
     render_batch: 4000
     camera_origin:
         - -3.0
@@ -63,16 +63,16 @@ trainer:
 #     base_lod: 5
 #     num_lods: 4
 # HashGrid default:
-# grid:
-#     grid_type: 'HashGrid'
-#     interpolation_type: 'linear'
-#     multiscale_type: 'cat'
-#     feature_dim: 2
-#     feature_std: 0.01
-#     num_lods: 16
-#     tree_type: 'geometric'
-#     max_grid_res: 2048
-#     codebook_bitwidth: 19
+grid:
+    grid_type: 'HashGrid'
+    interpolation_type: 'linear'
+    multiscale_type: 'cat'
+    feature_dim: 2
+    feature_std: 0.01
+    num_lods: 16
+    tree_type: 'geometric'
+    max_grid_res: 2048
+    codebook_bitwidth: 19
 # Triplanar default
 # grid:
 #     grid_type: 'TriplanarGrid'
@@ -82,6 +82,16 @@ trainer:
 #     feature_std: 0.01
 #     base_lod: 5
 #     num_lods: 4
+# Codebook default
+# grid:
+#     grid_type: 'CodebookOctreeGrid'
+#     interpolation_type: 'linear'
+#     multiscale_type: 'sum'
+#     feature_dim: 5
+#     feature_std: 0.01
+#     base_lod: 5
+#     num_lods: 4
+#     codebook_bitwidth: 4
 # Plenoxel HashGrid 1:
 # grid:
 #     grid_type: 'HashGrid'
@@ -106,14 +116,14 @@ trainer:
 #     max_grid_res: 2048
 #     codebook_bitwidth: 19
 #Plenoxel Octree:
-grid:
-    grid_type: 'OctreeGrid'
-    interpolation_type: 'linear'
-    multiscale_type: 'sum'
-    feature_dim: 28
-    feature_std: 0.01
-    base_lod: 7  # 5
-    num_lods: 2  # 4
+# grid:
+#     grid_type: 'OctreeGrid'
+#     interpolation_type: 'linear'
+#     multiscale_type: 'sum'
+#     feature_dim: 28
+#     feature_std: 0.01
+#     base_lod: 7  # 5
+#     num_lods: 2  # 4
 
 net:
     nef_type: 'MyPlenoxelNeuralField'
