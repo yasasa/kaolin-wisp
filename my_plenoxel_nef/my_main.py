@@ -80,52 +80,124 @@ if __name__ == "__main__":
         from wisp.config_parser import get_modules_from_config, get_optimizer_from_config
         pipeline, train_dataset, device = get_modules_from_config(args)
         optim_cls, optim_params = get_optimizer_from_config(args)
-        scene_state.graph.neural_pipelines['scene1'] = pipeline
+        add_to_scene_graph(scene_state, 'scene1', pipeline) # Add pipeline to scene graph (this is also done when initializing a trainer in base_trainer.py)
 
         ### Second object
 
-        args.config = "configs/nglod_nerf.yaml"
-        args.dataset_path = "/home/salar/datasets/V8_"
-        args.multiview_dataset_format = "rtmv"
-        args.mip = 2
-        args.pretrained = "/home/salar/RVL/repos/kaolin-wisp/_results/logs/runs/test-nglod-nerf/20220822-225049/model.pth"
-        #args.pretrained = "/home/salar/RVL/repos/kaolin-wisp/_results/logs/runs/test-ngp-nerf/20220822-231128/model.pth"
-        #args.dataset_path = "../instant-ngp/data/nerf/fox/"
+        #args.config = "configs/nglod_nerf.yaml"
+        #args.dataset_path = "/home/salar/datasets/V8_"
+        #args.multiview_dataset_format = "rtmv"
+        #args.mip = 2
+        #args.pretrained = "/home/salar/RVL/repos/kaolin-wisp/_results/logs/runs/test-nglod-nerf/20220822-225049/model.pth"
+        args.pretrained = "/home/salar/RVL/repos/kaolin-wisp/_results/logs/runs/test-ngp-nerf/20220822-231128/model.pth"
+        args.dataset_path = "../instant-ngp/data/nerf/fox/"
         pipeline2, train_dataset2, device = get_modules_from_config(args)
         add_to_scene_graph(scene_state, "object2", pipeline2)
 
-        ### RendererCore
+        # ### RendererCore
 
-        height, width = 360, 640
-        core = RendererCore(scene_state)
-        core.resize_canvas(height=height, width=width)
-        core.set_full_resolution()
-        core.redraw()          # Call this every time you add / remove an object
+        # height, width = 360, 640
+        # core = RendererCore(scene_state)
+        # core.resize_canvas(height=height, width=width)
+        # core.set_full_resolution()
+        # core.redraw()          # Call this every time you add / remove an object
 
-        ### Set camera
-        # TODO: set separate cameras for the two objects
+        # ## Scene only _______________________________
 
-        #camera = train_dataset2.data.get("cameras", dict()) ['00001'] # nglod v8
-        #camera = train_dataset2.data.get("cameras", dict()) ['0001'] # ngp fox
-        camera = train_dataset.data.get("cameras", dict()) ['0_00000'] # carla
-        scene_state.renderer.selected_camera = camera
-        print(camera)
+        # ### Set camera
 
-        ### Set visible objects and render
+        # # TODO: set separate cameras for the two objects
+        # #camera = train_dataset2.data.get("cameras", dict()) ['00001'] # nglod v8
+        # #camera = train_dataset2.data.get("cameras", dict()) ['0001'] # ngp fox
+        # val_data = train_dataset.get_images(split="val", mip=2)
+        # #camera = train_dataset.data.get("cameras", dict()) ['0_00050'] # carla
+        # camera = val_data.get("cameras", dict()) ['1_00001'] # carla val
+        # scene_state.renderer.selected_camera = camera
+        # #print(camera)
+
+        # ### Set visible objects and render
+        # scene_state.graph.visible_objects['object2'] = False
+        # print(scene_state.graph.visible_objects)
+
+        # ### Render
+        # rb = core.render()     # Obtain a render buffer
+        # #exrdict = rb.cpu().exr_dict()
+        # #write_exr("tmp.exr", exrdict)
+        # img_out = rb.cpu().image().byte().rgb.numpy()
+        # print(img_out.shape)
+        # write_png("tmp1.png", img_out)
+
+        # ## Object only _______________________________
         
-        #scene_state.graph.visible_objects['scene1'] = False
-        print(scene_state.graph.visible_objects)
+        # ### Set camera
+        # camera = train_dataset2.data.get("cameras", dict()) ['00001'] # nglod v8
+        # scene_state.renderer.selected_camera = camera
+        # #print(camera)
 
-        rb = core.render()     # Obtain a render buffer
-        # See evaluate_metrics() in multiview_trainer.py for examples on how write_png and write_exr are used
-        rb.view = None
-        rb.hit = None
+        # ### Set visible objects and render
+        # scene_state.graph.visible_objects['object2'] = True
+        # scene_state.graph.visible_objects['scene1'] = False
+        # print(scene_state.graph.visible_objects)
 
-        exrdict = rb.cpu().exr_dict()
+        # ### Render
+        # #core.resize_canvas(height=height, width=width)
+        # rb = core.render()     # Obtain a render buffer
+        # img_out = rb.cpu().image().byte().rgb.numpy()
+        # print(img_out.shape)
+        # write_png("tmp2.png", img_out)
+
+        ## Both Scene and Object _______________________________
+        extra_args=vars(args)
+        from wisp.offline_renderer import OfflineRenderer
+        from wisp.core import Rays
+        from wisp.ops.raygen import generate_pinhole_rays, generate_ortho_rays, generate_centered_pixel_coords
+        renderer = OfflineRenderer(**extra_args)
+
+        data = train_dataset.get_images(split="val", mip=0)
+        rays = data["rays"]
+        imgs = list(data["imgs"])
+        img_shape = imgs[0].shape
+        ray_os = list(rays.origins)
+        ray_ds = list(rays.dirs)
+        rays = Rays(ray_os[0], ray_ds[0], dist_min=rays.dist_min, dist_max=rays.dist_max)
+        rays = rays.reshape(-1, 3)
+        rays = rays.to('cuda')
+        rb = renderer.render(pipeline, rays)
+        rb = rb.reshape(*img_shape[:2], -1)
         img_out = rb.cpu().image().byte().rgb.numpy()
+        depth_out = rb.cpu().image().byte().depth.numpy()
+        write_png("tmp3.png", img_out)
+        write_png("tmp3_depth.png", depth_out)
         print(img_out.shape)
-        write_exr("tmp.exr", exrdict)
-        write_png("tmp.png", img_out)
+
+        #data = train_dataset2.get_images(split="val", mip=0)
+        data = train_dataset2.data
+        cameras = data["cameras"]
+        #camera = cameras['00100']
+        camera = cameras['0001']
+        ray_grid = generate_centered_pixel_coords(camera.width, camera.height,
+                                                  camera.width, camera.height, device='cuda')
+        rays = generate_pinhole_rays(camera.to(ray_grid[0].device), ray_grid).to(dtype=torch.float)
+        rays = rays.reshape(-1, 3).to('cuda')
+        #imgs = list(data["imgs"])
+        #img_shape = imgs[0].shape
+        img_shape2 = train_dataset2.img_shape
+        rb2 = renderer.render(pipeline2, rays)
+        rb2 = rb2.reshape(*img_shape2[:2], -1)
+        rb2 = rb2.scale(img_shape[:2])
+        img_out = rb2.cpu().image().byte().rgb.numpy()
+        depth_out = rb2.cpu().image().byte().depth.numpy()
+        write_png("tmp4.png", img_out)
+        write_png("tmp4_depth.png", depth_out)
+        print(img_out.shape)
+
+        ## Blend
+        core = RendererCore(scene_state)
+        out_rb = core._create_empty_rb(height=img_shape[0], width=img_shape[1]).to('cuda')
+        out_rb = out_rb.blend(rb, channel_kit=scene_state.graph.channels)
+        out_rb = out_rb.blend(rb2, channel_kit=scene_state.graph.channels)
+        img_out = out_rb.cpu().image().byte().rgb.numpy()
+        write_png("tmp5.png", img_out)
 
         exit()
 
