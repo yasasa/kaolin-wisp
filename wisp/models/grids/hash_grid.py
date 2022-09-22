@@ -149,3 +149,7 @@ class HashGrid(BLASGrid):
         """
         return self.blas.raymarch(rays,
                                   level=self.blas_level, num_samples=num_samples, raymarch_type=raymarch_type)
+
+    def add_residual(self, params):
+        for i, p in enumerate(params):
+            self.codebook[i] += p.view(*self.codebook[i].shape)
