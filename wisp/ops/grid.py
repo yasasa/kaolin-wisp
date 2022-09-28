@@ -85,6 +85,7 @@ class HashGridInterpolate(torch.autograd.Function):
         ctx.codebook_size = 2**codebook_bitwidth
         ctx.codebook_bitwidth = codebook_bitwidth
         ctx.feature_dim = codebook[0].shape[-1]
+        ctx.codebook = codebook
         return feats_out
     
     @staticmethod
@@ -95,13 +96,13 @@ class HashGridInterpolate(torch.autograd.Function):
         feature_dim = ctx.feature_dim
         codebook_shapes = ctx.codebook_shapes
         codebook_bitwidth = ctx.codebook_bitwidth
-        
-        grad_codebook = wisp_C.ops.hashgrid_interpolate_backward_cuda(
-                coords.contiguous(), grad_output.contiguous(), 
-                resolutions, [c_[0] for c_ in codebook_shapes], 
-                codebook_bitwidth, feature_dim)
-        return (None, None, None, None, *grad_codebook)
-        
+
+        grad_codebooks, grad_coords = wisp_C.ops.hashgrid_interpolate_backward_cuda(
+            coords.contiguous(), grad_output.contiguous(), resolutions,
+            [c_[0] for c_ in codebook_shapes], ctx.codebook, codebook_bitwidth,
+            feature_dim)
+        return (grad_coords, None, None, None, *grad_codebooks)
+
 def hashgrid(coords, resolutions, codebook_bitwidth, lod_idx, codebook):
     """The hashgrid function accleerated with CUDA.
     
