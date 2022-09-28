@@ -389,6 +389,32 @@ def get_optimizer_from_config(args):
         optim_params = {}
     return optim_cls, optim_params
 
+
+
+# --- Yasasa - Temp
+def get_model_from_config(args): #, res):
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    nef = globals()[args.nef_type](**vars(args))
+    tracer = globals()[args.tracer_type](**vars(args))
+    #nef.grid.init_from_resolutions([res])
+    pipeline = Pipeline(nef, tracer)
+
+    if args.pretrained:
+        if args.model_format == "full":
+            pipeline = torch.load(args.pretrained)
+        else:
+            pipeline.load_state_dict(torch.load(args.pretrained))
+
+    #pipeline.nef.grid.init_from_resolutions([res])
+    pipeline.to(device)
+
+    return nef, tracer, pipeline
+
+
+# --- Yasasa - Temp
+
+
+
 def get_modules_from_config(args):
     """Utility function to get the modules for training from the parsed config.
     """

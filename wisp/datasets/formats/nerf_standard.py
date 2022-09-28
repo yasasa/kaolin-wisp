@@ -235,6 +235,14 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
 
     rays = []
 
+    # print('fx:', fx)
+    # print('fy:', fy)
+    # print('defaultfar:', default_far)
+    # print('x0:', x0)
+    # print('y0:', y0)
+    # print(w)
+    # print(h)
+
     cameras = dict()
     for i in range(imgs.shape[0]):
         view_matrix = torch.zeros_like(poses[i])
@@ -254,7 +262,7 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
         camera.change_coordinate_system(blender_coords())
         cameras[basenames[i]] = camera
         ray_grid = generate_centered_pixel_coords(camera.width, camera.height,
-                                                  camera.width, camera.height, device='cuda')
+                                                  camera.width, camera.height, device='cuda')                                        
         rays.append \
             (generate_pinhole_rays(camera.to(ray_grid[0].device), ray_grid).reshape(camera.height, camera.width, 3).to
                 ('cpu'))
