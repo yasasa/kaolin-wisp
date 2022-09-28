@@ -407,7 +407,8 @@ def get_modules_from_config(args):
     if args.dataset_type == "multiview":
         transform = SampleRays(args.num_rays_sampled_per_img)
         train_dataset = MultiviewDataset(**vars(args), transform=transform)
-        train_dataset.init()
+        if not args.valid_only:
+            train_dataset.init()
         
         if pipeline.nef.grid is not None:
             if isinstance(pipeline.nef.grid, OctreeGrid):
