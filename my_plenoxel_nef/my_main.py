@@ -83,14 +83,16 @@ if __name__ == "__main__":
         add_to_scene_graph(scene_state, 'scene1', pipeline) # Add pipeline to scene graph (this is also done when initializing a trainer in base_trainer.py)
 
         ### Second object
-
-        #args.config = "configs/nglod_nerf.yaml"
-        #args.dataset_path = "/home/salar/datasets/V8_"
-        #args.multiview_dataset_format = "rtmv"
-        #args.mip = 2
-        #args.pretrained = "/home/salar/RVL/repos/kaolin-wisp/_results/logs/runs/test-nglod-nerf/20220822-225049/model.pth"
-        args.pretrained = "/home/salar/RVL/repos/kaolin-wisp/_results/logs/runs/test-ngp-nerf/20220822-231128/model.pth"
-        args.dataset_path = "../instant-ngp/data/nerf/fox/"
+        fox = True
+        if not fox:
+            args.config = "configs/nglod_nerf.yaml"
+            args.dataset_path = "/home/salar/datasets/V8_"
+            args.multiview_dataset_format = "rtmv"
+            args.mip = 2
+            args.pretrained = "/home/salar/RVL/repos/kaolin-wisp/_results/logs/runs/test-nglod-nerf/20220822-225049/model.pth"
+        else:
+            args.pretrained = "/home/salar/RVL/repos/kaolin-wisp/_results/logs/runs/test-ngp-nerf/20220822-231128/model.pth"
+            args.dataset_path = "../instant-ngp/data/nerf/fox/"
         pipeline2, train_dataset2, device = get_modules_from_config(args)
         add_to_scene_graph(scene_state, "object2", pipeline2)
 
@@ -154,27 +156,39 @@ if __name__ == "__main__":
         renderer = OfflineRenderer(**extra_args)
 
         data = train_dataset.get_images(split="val", mip=0)
-        rays = data["rays"]
-        imgs = list(data["imgs"])
-        img_shape = imgs[0].shape
-        ray_os = list(rays.origins)
-        ray_ds = list(rays.dirs)
-        rays = Rays(ray_os[0], ray_ds[0], dist_min=rays.dist_min, dist_max=rays.dist_max)
-        rays = rays.reshape(-1, 3)
-        rays = rays.to('cuda')
+        # rays = data["rays"]
+        # imgs = list(data["imgs"])
+        # img_shape = imgs[0].shape
+        # ray_os = list(rays.origins)
+        # ray_ds = list(rays.dirs)
+        # rays = Rays(ray_os[0], ray_ds[0], dist_min=rays.dist_min, dist_max=rays.dist_max)
+        # rays = rays.reshape(-1, 3)
+        # rays = rays.to('cuda')
+        #data = train_dataset.data
+        cameras = data["cameras"]
+        camera = cameras['1_00000']
+        #camera.intrinsics.zoom(-30)
+        ray_grid = generate_centered_pixel_coords(camera.width, camera.height,
+                                                  camera.width, camera.height, device='cuda')
+        rays = generate_pinhole_rays(camera.to(ray_grid[0].device), ray_grid).to(dtype=torch.float)
+        rays = rays.reshape(-1, 3).to('cuda')
+        img_shape = train_dataset.img_shape
         rb = renderer.render(pipeline, rays)
         rb = rb.reshape(*img_shape[:2], -1)
-        img_out = rb.cpu().image().byte().rgb.numpy()
-        depth_out = rb.cpu().image().byte().depth.numpy()
-        write_png("tmp3.png", img_out)
-        write_png("tmp3_depth.png", depth_out)
-        print(img_out.shape)
+        img_out1 = rb.cpu().image().byte().rgb.numpy()
+        depth_out1 = rb.cpu().image().byte().depth.numpy()
+        write_png("tmp3.png", img_out1)
+        write_png("tmp3_depth.png", depth_out1)
+        print(img_out1.shape)
 
         #data = train_dataset2.get_images(split="val", mip=0)
         data = train_dataset2.data
         cameras = data["cameras"]
-        #camera = cameras['00100']
-        camera = cameras['0001']
+        if fox:
+            camera = cameras['0001']
+            camera.intrinsics.zoom(20)
+        else:
+            camera = cameras['00001']
         ray_grid = generate_centered_pixel_coords(camera.width, camera.height,
                                                   camera.width, camera.height, device='cuda')
         rays = generate_pinhole_rays(camera.to(ray_grid[0].device), ray_grid).to(dtype=torch.float)
@@ -185,19 +199,41 @@ if __name__ == "__main__":
         rb2 = renderer.render(pipeline2, rays)
         rb2 = rb2.reshape(*img_shape2[:2], -1)
         rb2 = rb2.scale(img_shape[:2])
-        img_out = rb2.cpu().image().byte().rgb.numpy()
-        depth_out = rb2.cpu().image().byte().depth.numpy()
-        write_png("tmp4.png", img_out)
-        write_png("tmp4_depth.png", depth_out)
-        print(img_out.shape)
+        img_out2 = rb2.cpu().image().byte().rgb.numpy()
+        depth_out2 = rb2.cpu().image().byte().depth.numpy()
+        write_png("tmp4.png", img_out2)
+        write_png("tmp4_depth.png", depth_out2)
+        print(img_out2.shape)
 
         ## Blend
         core = RendererCore(scene_state)
         out_rb = core._create_empty_rb(height=img_shape[0], width=img_shape[1]).to('cuda')
+        #print(scene_state.graph.channels.keys())
+        #print(scene_state.graph.channels)
+        #from wisp.core.channel_fn import *
+        #scene_state.graph.channels['rgb'].blend_fn = blend_normal
         out_rb = out_rb.blend(rb, channel_kit=scene_state.graph.channels)
         out_rb = out_rb.blend(rb2, channel_kit=scene_state.graph.channels)
-        img_out = out_rb.cpu().image().byte().rgb.numpy()
-        write_png("tmp5.png", img_out)
+        img_out3 = out_rb.cpu().image().byte().rgb.numpy()
+        depth_out3 = out_rb.cpu().image().byte().depth.numpy()
+        write_png("tmp5.png", img_out3)
+        write_png("tmp5_depth.png", depth_out3)
+
+        import matplotlib.pyplot as plt
+        f = plt.figure(figsize=(23, 6))
+        plt.subplot(2,3,1)
+        plt.imshow(img_out1)
+        plt.subplot(2,3,2)
+        plt.imshow(img_out2)
+        plt.subplot(2,3,3)
+        plt.imshow(img_out3)
+        plt.subplot(2,3,4)
+        plt.imshow(depth_out1)
+        plt.subplot(2,3,5)
+        plt.imshow(depth_out2)
+        plt.subplot(2,3,6)
+        plt.imshow(depth_out3)
+        f.savefig("tmp_compose.png", bbox_inches='tight')
 
         exit()
 
