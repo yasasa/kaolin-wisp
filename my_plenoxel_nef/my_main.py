@@ -83,7 +83,7 @@ if __name__ == "__main__":
         add_to_scene_graph(scene_state, 'scene1', pipeline) # Add pipeline to scene graph (this is also done when initializing a trainer in base_trainer.py)
 
         ### Second object
-        fox = True
+        fox = False
         if not fox:
             args.config = "configs/nglod_nerf.yaml"
             args.dataset_path = "/home/salar/datasets/V8_"
@@ -174,6 +174,9 @@ if __name__ == "__main__":
         rays = rays.reshape(-1, 3).to('cuda')
         img_shape = train_dataset.img_shape
         rb = renderer.render(pipeline, rays)
+        #channels = ['rgb']
+        #channels.append('depth')
+        #rb = pipeline(channels=channels, rays=rays)
         rb = rb.reshape(*img_shape[:2], -1)
         img_out1 = rb.cpu().image().byte().rgb.numpy()
         depth_out1 = rb.cpu().image().byte().depth.numpy()
@@ -189,6 +192,16 @@ if __name__ == "__main__":
             camera.intrinsics.zoom(20)
         else:
             camera = cameras['00001']
+
+            camera.intrinsics.zoom(-20)
+            camera.extrinsics.translate(torch.tensor([0.5, 0.5, 0.5], dtype=torch.float64))
+            # camera.extrinsics.move_forward(0.5)
+            # camera.extrinsics.move_up(0.5)
+            # camera.extrinsics.move_right(0.5)
+            yaw = 0.4
+            pitch = 0.4
+            roll = 0.4
+            camera.extrinsics.rotate(yaw=yaw, pitch=pitch, roll=roll)
         ray_grid = generate_centered_pixel_coords(camera.width, camera.height,
                                                   camera.width, camera.height, device='cuda')
         rays = generate_pinhole_rays(camera.to(ray_grid[0].device), ray_grid).to(dtype=torch.float)
@@ -197,7 +210,10 @@ if __name__ == "__main__":
         #img_shape = imgs[0].shape
         img_shape2 = train_dataset2.img_shape
         rb2 = renderer.render(pipeline2, rays)
+        #from wisp.ops.shaders import matcap_shader, pointlight_shadow_shader
+        #rb2 = pointlight_shadow_shader(rb2, rays, pipeline2) # TEMP
         rb2 = rb2.reshape(*img_shape2[:2], -1)
+        print('obj shape', rb2.rgb.shape)
         rb2 = rb2.scale(img_shape[:2])
         img_out2 = rb2.cpu().image().byte().rgb.numpy()
         depth_out2 = rb2.cpu().image().byte().depth.numpy()
@@ -206,14 +222,14 @@ if __name__ == "__main__":
         print(img_out2.shape)
 
         ## Blend
-        core = RendererCore(scene_state)
-        out_rb = core._create_empty_rb(height=img_shape[0], width=img_shape[1]).to('cuda')
+        #core = RendererCore(scene_state)
+        #out_rb = core._create_empty_rb(height=img_shape[0], width=img_shape[1]).to('cuda')
+        #out_rb = out_rb.blend(rb, channel_kit=scene_state.graph.channels)
         #print(scene_state.graph.channels.keys())
         #print(scene_state.graph.channels)
         #from wisp.core.channel_fn import *
         #scene_state.graph.channels['rgb'].blend_fn = blend_normal
-        out_rb = out_rb.blend(rb, channel_kit=scene_state.graph.channels)
-        out_rb = out_rb.blend(rb2, channel_kit=scene_state.graph.channels)
+        out_rb = rb.blend(rb2, channel_kit=scene_state.graph.channels)
         img_out3 = out_rb.cpu().image().byte().rgb.numpy()
         depth_out3 = out_rb.cpu().image().byte().depth.numpy()
         write_png("tmp5.png", img_out3)
