@@ -64,10 +64,6 @@ net:
     hidden_dim: 128
     num_layers: 1
     out_dim: 4
-    pretrained: /home/salar/models/model_carla_15x15x20_ngp_aabb2.pth
 
 embedder:
     embedder_type: 'positional'
-
-validation:
-    valid_only: True

@@ -410,7 +410,7 @@ def get_model_from_config(args):#, res):
 
 # --- Yasasa - Temp
 
-def get_modules_from_config(args):
+def get_modules_from_config(args, init_dataset=True):
     """Utility function to get the modules for training from the parsed config.
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -428,7 +428,7 @@ def get_modules_from_config(args):
     if args.dataset_type == "multiview":
         transform = SampleRays(args.num_rays_sampled_per_img)
         train_dataset = MultiviewDataset(**vars(args), transform=transform)
-        if not args.valid_only:
+        if init_dataset:
             train_dataset.init()
         
         if pipeline.nef.grid is not None:
