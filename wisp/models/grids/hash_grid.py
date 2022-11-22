@@ -98,6 +98,7 @@ class HashGrid(BLASGrid):
         """Build a multiscale hash grid from a list of resolutions.
         """
         self.resolutions = resolutions
+        self.resolutions_t = torch.tensor(resolutions)
         self.num_lods = len(resolutions)
         self.active_lods = [x for x in range(self.num_lods)]
         self.max_lod = self.num_lods - 1

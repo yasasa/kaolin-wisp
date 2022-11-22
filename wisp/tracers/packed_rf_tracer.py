@@ -88,10 +88,17 @@ class PackedRFTracer(BaseTracer):
 
         # Get the indices of the ray tensor which correspond to hits
         ridx_hit = ridx[spc_render.mark_pack_boundaries(ridx.int())]
+        
 
         # Compute the color and density for each ray and their samples
         hit_ray_d = rays.dirs.index_select(0, ridx)
-        color, density = nef(coords=samples, ray_d=hit_ray_d, pidx=pidx, lod_idx=lod_idx,
+        hit_depth_factors = rays.ray_d_factor.index_select(0, ridx)
+        df = hit_depth_factors * depths
+        
+        
+       # print(samples.shape, depths.shape, hit_depth_factors.shape)
+        
+        color, density = nef(coords=samples, ray_d=hit_ray_d, df=df, pidx=pidx, lod_idx=lod_idx,
                              channels=["rgb", "density"])
 
         timer.check("RGBA")

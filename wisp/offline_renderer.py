@@ -154,8 +154,14 @@ class OfflineRenderer():
             mm = mm.to('cuda')
             ray_o = torch.mm(ray_o, mm)
             ray_d = torch.mm(ray_d, mm)
+            
+        camera_origin = torch.FloatTensor(f).to(device)
+        fwd = F.normalize(torch.FloatTensor(t).to(device) - camera_origin, dim=0)
+        focal = torch.tan(torch.deg2rad(torch.FloatTensor(fov).to(device)))*2 / self.height
         
-        rays = Rays(origins=ray_o, dirs=ray_d, dist_min=camera_clamp[0], dist_max=camera_clamp[1])
+        factor = torch.matmul(ray_d, fwd.view(3, 1)) / focal
+        
+        rays = Rays(origins=ray_o, dirs=ray_d, ray_d_factor=factor, dist_min=camera_clamp[0], dist_max=camera_clamp[1])
 
         rb = self.render(pipeline, rays, lod_idx=lod_idx)
         rb = rb.reshape(self.height, self.width, -1) 

@@ -27,12 +27,15 @@ class Rays:
 
     dirs: torch.Tensor
     """ Ray's normalized direction """
+    
+    ray_d_factor: torch.Tensor
 
     dist_min: Union[float, torch.Tensor] = 0.0
     """ Distance in which ray intersection test begins. Can be defined globally or per ray. """
 
     dist_max: Union[float, torch.Tensor] = INFINITY
     """ Distance in which ray intersection test ends. Can be defined globally or per ray. """
+    
 
     # TODO (operel): Handle tensor case in functions below
 
@@ -83,6 +86,7 @@ class Rays:
         return Rays(
             origins=torch.cat([rays.origins for rays in rays_list], dim=dim),
             dirs=torch.cat([rays.dirs for rays in rays_list], dim=dim),
+            ray_d_factor=torch.cat([rays.ray_d_factor for rays in rays_list], dim=dim),
             dist_min=min([rays.dist_min for rays in rays_list]),
             dist_max=max([rays.dist_max for rays in rays_list])
         )
@@ -101,6 +105,7 @@ class Rays:
         return Rays(
             origins=torch.stack([rays.origins for rays in rays_list], dim=dim),
             dirs=torch.stack([rays.dirs for rays in rays_list], dim=dim),
+            ray_d_factor=torch.stack([rays.ray_d_factor for rays in rays_list], dim=dim),
             dist_min=min([rays.dist_min for rays in rays_list]),
             dist_max=max([rays.dist_max for rays in rays_list])
         )
@@ -117,6 +122,7 @@ class Rays:
         return Rays(
             origins=self.origins[idx],
             dirs=self.dirs[idx],
+            ray_d_factor=self.ray_d_factor[idx],
             dist_min=self.dist_min[idx] if isinstance(self.dist_min, torch.Tensor) else self.dist_min,
             dist_max=self.dist_max[idx] if isinstance(self.dist_max, torch.Tensor) else self.dist_max
         )
@@ -131,9 +137,9 @@ class Rays:
         Returns:
             (List[Rays]): A list of smaller Rays batches, split from the current rays pack.
         """
-        zipped = zip(torch.split(self.origins, split_size), torch.split(self.dirs, split_size))
-        return [Rays(origins=origins, dirs=dirs, dist_min=self.dist_min, dist_max=self.dist_max)
-                for origins, dirs in zipped]
+        zipped = zip(torch.split(self.origins, split_size), torch.split(self.dirs, split_size), torch.split(self.ray_d_factor, split_size))
+        return [Rays(origins=origins, dirs=dirs, ray_d_factor=ray_d_factor, dist_min=self.dist_min, dist_max=self.dist_max)
+                for origins, dirs, ray_d_factor in zipped]
 
     def reshape(self, *dims: Tuple) -> Rays:
         """ Reshapes the dimensions of the rays struct.
@@ -146,6 +152,7 @@ class Rays:
         """
         return Rays(origins=self.origins.reshape(*dims),
                    dirs=self.dirs.reshape(*dims),
+                   ray_d_factor=self.ray_d_factor.reshape(*dims[:-1] + (1,)),
                    dist_min=self.dist_min,
                    dist_max=self.dist_max)
 
@@ -160,6 +167,7 @@ class Rays:
         """
         return Rays(origins=self.origins.squeeze(dim),
                    dirs=self.dirs.squeeze(dim),
+                   ray_d_factor=self.ray_d_factor.squeeze(dim),
                    dist_min=self.dist_min,
                    dist_max=self.dist_max)
 
@@ -172,6 +180,7 @@ class Rays:
         """
         return Rays(origins=self.origins.contiguous(),
                    dirs=self.dirs.contiguous(),
+                   ray_d_factor=self.ray_d_factor.contiguous(),
                    dist_min=self.dist_min,
                    dist_max=self.dist_max)
 
@@ -185,10 +194,12 @@ class Rays:
 
         origins = self.origins.to(*args, **kwargs)
         dirs = self.dirs.to(*args, **kwargs)
-        if origins is not self.origins or dirs is not self.dirs:
+        ray_d_factor = self.ray_d_factor.to(*args, **kwargs)
+        if origins is not self.origins or dirs is not self.dirs or ray_d_factor is not self.ray_d_factor:
             return Rays(
                 origins=origins,
                 dirs=dirs,
+                ray_d_factor=ray_d_factor,
                 dist_min=self.dist_min,
                 dist_max=self.dist_max
             )

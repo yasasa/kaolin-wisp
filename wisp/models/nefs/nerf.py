@@ -134,8 +134,9 @@ class NeuralRadianceField(BaseNeuralField):
         """Register the forward functions.
         """
         self._register_forward_function(self.rgba, ["density", "rgb"])
-
-    def rgba(self, coords, ray_d, pidx=None, lod_idx=None):
+        
+        
+    def rgba(self, coords, ray_d, df=None, pidx=None, lod_idx=None):
         """Compute color and density [particles / vol] for the provided coordinates.
 
         Args:
@@ -156,12 +157,24 @@ class NeuralRadianceField(BaseNeuralField):
         batch, num_samples, _ = coords.shape
         timer.check("rf_rgba_preprocess")
         
+        max_res = 1./ torch.min(df, dim=-1)[0]
+        print(max_res)
+        resolutions = self.grid.resolutions_t.type_as(coords)
+       # weight_mask = resolutions[None, :].broadcast_to(df.shape[0], df.shape[1], self.grid.num_lods) < max_res.clamp(min=resolutions[0] + 1)[:, None]
+       # print(weight_mask.shape)
+        
+        
         # Embed coordinates into high-dimensional vectors with the grid.
-        feats = self.grid.interpolate(coords, lod_idx).reshape(-1, self.effective_feature_dim)
+        feats = self.grid.interpolate(coords, lod_idx).reshape(-1, self.grid.num_lods, self.grid.feature_dim)
+        feats[max_res[:, None] < resolutions[None, :]] = 0.01
+        feats = feats.view(-1, self.effective_feature_dim)
+        
         timer.check("rf_rgba_interpolate")
         
         if self.position_input:
             raise NotImplementedError
+            
+               
 
         # Decode high-dimensional vectors to RGBA.
         density_feats = self.decoder_density(feats)

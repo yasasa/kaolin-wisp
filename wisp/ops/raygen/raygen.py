@@ -76,13 +76,19 @@ def generate_pinhole_rays(camera: Camera, coords_grid: torch.Tensor):
 
     ray_dir = ray_dir.reshape(-1, 3)    # Flatten grid rays to 1D array
     ray_orig = torch.zeros_like(ray_dir)
+    
+    
 
     # Transform from camera to world coordinates
     ray_orig, ray_dir = camera.extrinsics.inv_transform_rays(ray_orig, ray_dir)
     ray_dir /= torch.linalg.norm(ray_dir, dim=-1, keepdim=True)
     ray_orig, ray_dir = ray_orig[0], ray_dir[0]  # Assume a single camera
+    
+    fwd = camera.cam_forward()
+    diff_factor = ray_dir.matmul(-fwd.view(3, 1)) / camera.focal_x #Y: lazily assume the same for now 
+    print(diff_factor)
 
-    return Rays(origins=ray_orig, dirs=ray_dir, dist_min=camera.near, dist_max=camera.far)
+    return Rays(origins=ray_orig, dirs=ray_dir, ray_d_factor=diff_factor, dist_min=camera.near, dist_max=camera.far)
 
 
 def generate_ortho_rays(camera: Camera, coords_grid: torch.Tensor):

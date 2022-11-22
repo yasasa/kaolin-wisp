@@ -109,15 +109,16 @@ class MultiviewTrainer(BaseTrainer):
         
         ray_os = list(rays.origins)
         ray_ds = list(rays.dirs)
+        ray_factors = list(rays.ray_d_factor)
         lpips_model = LPIPS(net='vgg').cuda()
 
         psnr_total = 0.0
         lpips_total = 0.0
         ssim_total = 0.0
         with torch.no_grad():
-            for idx, (img, ray_o, ray_d) in tqdm(enumerate(zip(imgs, ray_os, ray_ds))):
+            for idx, (img, ray_o, ray_d, ray_f) in tqdm(enumerate(zip(imgs, ray_os, ray_ds, ray_factors))):
                 
-                rays = Rays(ray_o, ray_d, dist_min=rays.dist_min, dist_max=rays.dist_max)
+                rays = Rays(ray_o, ray_d, ray_d_factor=ray_f, dist_min=rays.dist_min, dist_max=rays.dist_max)
                 rays = rays.reshape(-1, 3)
                 rays = rays.to('cuda')
                 rb = self.renderer.render(self.pipeline, rays, lod_idx=lod_idx)
