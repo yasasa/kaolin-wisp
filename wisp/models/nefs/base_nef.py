@@ -24,7 +24,7 @@ class BaseNeuralField(nn.Module):
     """
     def __init__(self, 
         grid_type          : str = 'OctreeGrid',
-        interpolation_type : str = 'trilinear',
+        interpolation_type : str = 'linear',
         multiscale_type    : str = 'none',
 
         as_type            : str = 'octree',
@@ -114,6 +114,17 @@ class BaseNeuralField(nn.Module):
         """
         return 'default'
 
+    @property
+    def device(self):
+        """ Returns the device used to process inputs in this neural field.
+        By default, the device is queried from the first registered torch nn.parameter.
+        Override this property to explicitly specify the device.
+
+        Returns:
+            (torch.device): The expected device for inputs to this neural field.
+        """
+        return next(self.parameters()).device
+
     def _register_forward_function(self, fn, channels):
         """Registers a forward function.
 
@@ -180,6 +191,9 @@ class BaseNeuralField(nn.Module):
                 If channels is a set, will return a dictionary of channels.
                 If channels is None, will return a dictionary of all channels.
         """
+        if not (isinstance(channels, str) or isinstance(channels, list) or isinstance(channels, set) or channels is None):
+            raise Exception(f"Channels type invalid, got {type(channels)}." \
+                             "Make sure your arguments for the nef are provided as keyword arguments.")
         if channels is None:
             requested_channels = self.get_supported_channels()
         elif isinstance(channels, str):

@@ -86,39 +86,15 @@ class PackedRFTracer(BaseTracer):
 
         timer.check("Raymarch")
 
-        # Check for the base case where the BLAS traversal hits nothing
-        if ridx.shape[0] == 0:
-            if bg_color == 'white':
-                hit = torch.zeros(N, device=ridx.device).bool()
-                rgb = torch.ones(N, 3, device=ridx.device)
-                alpha = torch.zeros(N, 1, device=ridx.device)
-            else:
-                hit = torch.zeros(N, 1, device=ridx.device).bool()
-                rgb = torch.zeros(N, 3, device=ridx.device)
-                alpha = torch.zeros(N, 1, device=ridx.device)
-            
-            if "depth" in channels:
-                depth = torch.zeros(N, 1, device=ridx.device)
-            else:
-                depth = None
-        
-            extra_outputs = {}
-            for channel in extra_channels:
-                extra_outputs[channel] = torch.zeros(N, 3, device=ridx.device)
-            return RenderBuffer(depth=depth, hit=hit, rgb=rgb, alpha=alpha, **extra_outputs)
-
-        timer.check("Boundary")
-        
         # Get the indices of the ray tensor which correspond to hits
         ridx_hit = ridx[spc_render.mark_pack_boundaries(ridx.int())]
-        
 
         # Compute the color and density for each ray and their samples
         hit_ray_d = rays.dirs.index_select(0, ridx)
         color, density = nef(coords=samples, ray_d=hit_ray_d, pidx=pidx, lod_idx=lod_idx,
                              channels=["rgb", "density"])
 
-        timer.check("RGBA")        
+        timer.check("RGBA")
         del ridx, rays
 
         # Compute optical thickness
@@ -150,7 +126,7 @@ class PackedRFTracer(BaseTracer):
             color = alpha * ray_colors
 
         rgb[ridx_hit.long()] = color
-        
+
         timer.check("Composit")
 
         extra_outputs = {}
@@ -160,12 +136,13 @@ class PackedRFTracer(BaseTracer):
                         pidx=pidx,
                         lod_idx=lod_idx,
                         channels=channel)
-            ray_feats, transmittance = spc_render.exponential_integration(feats.reshape(-1, 3), tau, boundary, exclusive=True)
+            num_channels = feats.shape[-1]
+            ray_feats, transmittance = spc_render.exponential_integration(
+                feats.view(-1, num_channels), tau, boundary, exclusive=True
+            )
             composited_feats = alpha * ray_feats
-            out_feats = torch.zeros(N, feats.shape[-1], device=feats.device)
+            out_feats = torch.zeros(N, num_channels, device=feats.device)
             out_feats[ridx_hit.long()] = composited_feats
-            # TODO(ttakikawa): Right now the extra_channels are assumed to be dim 3. Think about how we can make this more generic...
-            assert(out_feats.shape[-1] == 3)
             extra_outputs[channel] = out_feats
 
         return RenderBuffer(depth=depth, hit=hit, rgb=rgb, alpha=out_alpha, **extra_outputs)
