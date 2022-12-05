@@ -173,7 +173,7 @@ def parse_options(return_parser=False):
     data_group.add_argument('--num-rays-sampled-per-img', type=int, default='4096',
                             help='Number of rays to sample per image')
     data_group.add_argument('--bg-color', default='white',
-                            choices=['white', 'black'],
+                            choices=['white', 'black', 'predict'],
                             help='Background color')
     data_group.add_argument('--mip', type=int, default=None, 
                             help='MIP level of ground truth image')
