@@ -77,6 +77,9 @@ class BaseNeuralField(nn.Module):
 
         self.kwargs = kwargs
 
+        # Whether to include bg decoder
+        self.include_bg = (self.kwargs['bg_color'] == 'predict')
+
         self.grid = None
         self.decoder = None
         

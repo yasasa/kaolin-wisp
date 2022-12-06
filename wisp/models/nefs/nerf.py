@@ -65,9 +65,10 @@ class NeuralRadianceField(BaseNeuralField):
                                           layer=get_layer_class(self.layer_type), num_layers=self.num_layers+1,
                                           hidden_dim=self.hidden_dim, skip=[])
 
-        self.decoder_bgcolor = BasicDecoder(self.pos_embed_dim + self.view_embed_dim + 1, 3, get_activation_class(self.activation_type), True,
-                                          layer=get_layer_class(self.layer_type), num_layers=self.num_layers+1,
-                                          hidden_dim=self.hidden_dim, skip=[])                   
+        if self.include_bg:
+            self.decoder_bgcolor = BasicDecoder(self.pos_embed_dim + self.view_embed_dim + 1, 3, get_activation_class(self.activation_type), True,
+                                                layer=get_layer_class(self.layer_type), num_layers=self.num_layers+1,
+                                                hidden_dim=self.hidden_dim, skip=[])                   
 
     def init_grid(self):
         """Initialize the grid object.

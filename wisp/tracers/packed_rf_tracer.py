@@ -124,11 +124,9 @@ class PackedRFTracer(BaseTracer):
             del ridx, rays
             timer.check("Background RGB")
 
-            print(ray_colors_bg.shape, ray_colors.shape)
-
             # Composite fg and bg when rays hit, and default to bg when rays miss
             rgb = ray_colors_bg.clone()
-            color = (1.0-alpha) * ray_colors_bg + alpha * ray_colors
+            color = (1.0-alpha) * ray_colors_bg[ridx_hit.long(), :] + alpha * ray_colors
 
         elif bg_color == 'white':
             rgb = torch.ones(N, 3, device=color.device)
