@@ -95,7 +95,6 @@ class PackedRFTracer(BaseTracer):
                              channels=["rgb", "density"])
 
         timer.check("RGBA")
-        del ridx, rays
 
         # Compute optical thickness
         tau = density.reshape(-1, 1) * deltas
@@ -118,7 +117,18 @@ class PackedRFTracer(BaseTracer):
         hit[ridx_hit.long()] = alpha[...,0] > 0.0
 
         # Populate the background
-        if bg_color == 'white':
+        if bg_color == 'predict':
+
+            # Query bg colours directly from rays
+            ray_colors_bg = nef.forward_bg(rays.origins, rays.dirs, hit.type_as(rays.origins).reshape(N, 1)).type_as(ray_colors)
+            del ridx, rays
+            timer.check("Background RGB")
+
+            # Composite fg and bg when rays hit, and default to bg when rays miss
+            rgb = ray_colors_bg.clone()
+            color = (1.0-alpha) * ray_colors_bg[ridx_hit.long(), :] + alpha * ray_colors
+
+        elif bg_color == 'white':
             rgb = torch.ones(N, 3, device=color.device)
             color = (1.0-alpha) + alpha * ray_colors
         else:

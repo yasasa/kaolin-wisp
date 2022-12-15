@@ -65,6 +65,11 @@ class NeuralRadianceField(BaseNeuralField):
                                           layer=get_layer_class(self.layer_type), num_layers=self.num_layers+1,
                                           hidden_dim=self.hidden_dim, skip=[])
 
+        if self.include_bg:
+            self.decoder_bgcolor = BasicDecoder(self.pos_embed_dim + self.view_embed_dim + 1, 3, get_activation_class(self.activation_type), True,
+                                                layer=get_layer_class(self.layer_type), num_layers=self.num_layers+1,
+                                                hidden_dim=self.hidden_dim, skip=[])                   
+
     def init_grid(self):
         """Initialize the grid object.
         """
@@ -181,3 +186,18 @@ class NeuralRadianceField(BaseNeuralField):
         
         return dict(rgb=colors, density=density)
 
+    def forward_bg(self, rays_origins, rays_dirs, rays_is_hit):
+        '''
+        Return bg rgb for each ray
+        '''
+
+        origin_embeddings = self.pos_embedder(rays_origins)
+        view_embeddings = self.view_embedder(-rays_dirs)
+
+        # input tensor with shape N x (self.pos_embed_dim + self.view_embed_dim + 1) 
+        # e.g. N x (63 + 27 + 1) for pos basis size 10, view basis size 4
+        x = torch.cat((origin_embeddings, view_embeddings, rays_is_hit), dim=1) 
+
+        bg_colors = torch.sigmoid(self.decoder_bgcolor(x))
+
+        return bg_colors

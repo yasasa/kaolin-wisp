@@ -173,7 +173,7 @@ def parse_options(return_parser=False):
     data_group.add_argument('--num-rays-sampled-per-img', type=int, default='4096',
                             help='Number of rays to sample per image')
     data_group.add_argument('--bg-color', default='white',
-                            choices=['white', 'black'],
+                            choices=['white', 'black', 'predict'],
                             help='Background color')
     data_group.add_argument('--mip', type=int, default=None, 
                             help='MIP level of ground truth image')
@@ -391,7 +391,7 @@ def get_optimizer_from_config(args):
         optim_params = {}
     return optim_cls, optim_params
 
-def get_modules_from_config(args):
+def get_modules_from_config(args, init_dataset=True):
     """Utility function to get the modules for training from the parsed config.
     """
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -409,7 +409,8 @@ def get_modules_from_config(args):
     if args.dataset_type == "multiview":
         transform = SampleRays(args.num_rays_sampled_per_img)
         train_dataset = MultiviewDataset(**vars(args), transform=transform)
-        train_dataset.init()
+        if init_dataset:
+            train_dataset.init()
         
         if pipeline.nef.grid is not None:
             if isinstance(pipeline.nef.grid, OctreeGrid):
