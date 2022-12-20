@@ -224,11 +224,16 @@ class RenderBuffer:
         assert self.depth is not None and other.depth is not None, "Cannot blend renderbuffers without depth values."
         # TODO (operel): In the future depth front / back may depend on the choice of NDC space
         #   (currently objects in the front --> lower depth)
-        mask: torch.Tensor = self.depth <= other.depth
+        #mask: torch.Tensor = self.depth <= other.depth
+
+        mask: torch.Tensor = torch.logical_or((self.depth <= other.depth), (other.depth == 0))  # EDITED
+        #mask: torch.tensor = other.depth == 0  # EDITED
+
         blended = dict()
         joint_fields = RenderBuffer._join_fields(self, other)  # Union of field names and tuples of values
         alpha_pair = (self.alpha, other.alpha)
         is_alpha_blending = None not in alpha_pair
+        #is_alpha_blending = False # EDITED
         for field in joint_fields:
             pair = getattr(self, field), getattr(other, field)
 
