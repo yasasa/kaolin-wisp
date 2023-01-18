@@ -79,6 +79,9 @@ class BaseNeuralField(nn.Module):
 
         # Whether to include bg decoder
         self.include_bg = (self.kwargs['bg_color'] == 'predict')
+        
+        #Whether to use direction
+        self.ignore_view_dir = self.kwargs['ignore_view_dir']
 
         self.grid = None
         self.decoder = None

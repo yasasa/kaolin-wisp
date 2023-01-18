@@ -196,7 +196,7 @@ class OctreeAS(object):
         elif raymarch_type == 'ray':
             # Sample points along 1D line
             depth = torch.linspace(0, 1.0, num_samples, device=rays.origins.device)[None] + \
-                    (torch.rand(rays.origins.shape[0], num_samples, device=rays.origins.device)/num_samples)
+                    (0.5*torch.ones(rays.origins.shape[0], num_samples, device=rays.origins.device)/num_samples)
             #depth = torch.linspace(0, 1.0, num_samples, device=rays.origins.device) + \
             #        (torch.rand(num_samples, rays.origins.device)/num_samples)
             depth = depth ** 2

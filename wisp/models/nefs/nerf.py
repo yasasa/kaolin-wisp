@@ -173,6 +173,9 @@ class NeuralRadianceField(BaseNeuralField):
         timer.check("rf_rgba_decode")
         
         # Optionally concat the positions to the embedding, and also concatenate embedded view directions.
+        
+        if self.ignore_view_dir:
+            ray_d = torch.zeros_like(ray_d)
         fdir = torch.cat([density_feats,
             self.view_embedder(-ray_d)[:,None].repeat(1, num_samples, 1).view(-1, self.view_embed_dim)], dim=-1)
         timer.check("rf_rgba_embed_cat")

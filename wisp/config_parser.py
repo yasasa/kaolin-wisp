@@ -133,6 +133,8 @@ def parse_options(return_parser=False):
                           help='Path to pretrained model weights.')
     net_group.add_argument('--position-input', action='store_true',
                           help='Use position as input.')
+    net_group.add_argument('--ignore_view_dir', action='store_true',
+                          help='Ignore view direction as input.')
 
     ###################
     # Arguments for dataset
