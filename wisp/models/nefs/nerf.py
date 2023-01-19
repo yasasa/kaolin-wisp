@@ -40,7 +40,7 @@ class NeuralRadianceField(BaseNeuralField):
                  # pruning args
                  prune_density_decay: float = None,
                  prune_min_density: float = None,
-                 bg_color='white':
+                 bg_color: str = 'white',
                  ):
         """
         Creates a new NeRF instance, which maps 3D input coordinates + view directions to RGB + density.
