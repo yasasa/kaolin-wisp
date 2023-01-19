@@ -10,11 +10,14 @@ class PackedSPCTracer(BaseTracer):
     The logic of this tracer is straightforward and does not involve any neural operations:
     rays are intersected against the SPC points (cell centers).
     Each ray returns the color of the intersected cell, if such exists.
+
+    See: https://github.com/NVIDIAGameWorks/kaolin-wisp/tree/main/examples/spc_browser
+    See also: https://kaolin.readthedocs.io/en/latest/notes/spc_summary.html#spc
     """
 
-    def __init__(self, **kwargs):
+    def __init__(self):
         """Set the default trace() arguments. """
-        super().__init__(**kwargs)
+        super().__init__()
 
     def get_supported_channels(self):
         """Returns the set of channel names this tracer may output.
@@ -32,14 +35,14 @@ class PackedSPCTracer(BaseTracer):
         """
         return {"rgb"}
 
-    def trace(self, nef, channels, extra_channels, rays, lod_idx=None):
+    def trace(self, nef, rays, channels, extra_channels, lod_idx=None):
         """Trace the rays against the neural field.
 
         Args:
             nef (nn.Module): A neural field that uses a grid class.
+            rays (wisp.core.Rays): Ray origins and directions of shape [N, 3]
             channels (set): The set of requested channels. The trace method can return channels that
                             were not requested since those channels often had to be computed anyways.
-            rays (wisp.core.Rays): Ray origins and directions of shape [N, 3]
             lod_idx (int): LOD index to render at.
 
         Returns:
@@ -52,7 +55,10 @@ class PackedSPCTracer(BaseTracer):
         if lod_idx is None:
             lod_idx = nef.grid.blas.max_level
 
-        ridx, pidx, depths = nef.grid.blas.raytrace(rays, lod_idx, with_exit=False)
+        raytrace_results = nef.grid.blas.raytrace(rays, lod_idx, with_exit=False)
+        ridx = raytrace_results.ridx
+        pidx = raytrace_results.pidx
+        depths = raytrace_results.depth
 
         timer.check("Raytrace")
 

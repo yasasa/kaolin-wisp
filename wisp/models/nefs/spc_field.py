@@ -1,8 +1,10 @@
+from typing import Dict, Any
 import numpy as np
 import torch
 from wisp.models.grids import OctreeGrid
 from wisp.models.nefs.nerf import NeuralRadianceField, BaseNeuralField
 import wisp.ops.spc as wisp_spc_ops
+import kaolin.ops.spc as kaolin_ops_spc
 
 
 class SPCField(BaseNeuralField):
@@ -19,15 +21,14 @@ class SPCField(BaseNeuralField):
     Feature samples per ray may be collected from each intersected "cell" of the structured point cloud.
     """
 
-    def __init__(self, octree, features_dict=None,
-                 device='cuda', base_lod=None, num_lods=None, optimizable=False, **kwargs):
-        """
-        Creates a new Structured Point Cloud (SPC), represented as a Wisp Field.
+    def __init__(self, spc_octree, features_dict=None, device='cuda'):
+        r"""Creates a new Structured Point Cloud (SPC), represented as a Wisp Field.
+
         In wisp, SPCs are considered neural fields, since their features may be optimized.
         See `examples/spc_browser` for an elaborate description of SPCs.
 
         Args:
-            octree (torch.ByteTensor):
+            spc_octree (torch.ByteTensor):
                 A tensor which holds the topology of the SPC.
                 Each byte represents a single octree cell's occupancy (that is, each bit of that byte represents
                 the occupancy status of a child octree cell), yielding 8 bits for 8 cells.
@@ -42,31 +43,26 @@ class SPCField(BaseNeuralField):
                 cloud information to such features.
             device (torch.device):
                 Torch device on which the features and topology of the SPC field will be stored.
-            base_lod (int):
-                Number of levels of detail without features the SPC will use.
-            num_lods (int):
-                Number of levels of detail with features the SPC will use.
-                The total number of levels the SPC will have is `base_lod + num_lods - 1`.
-            optimizable (bool):
-                A flag which determines if this SPCField supports optimization or not.
-                Toggling optimization off allows for quick creation of SPCField objects.
         """
-        self.octree = octree
+        super().__init__()
+        self.spc_octree = spc_octree
         self.features_dict = features_dict if features_dict is not None else dict()
         self.spc_device = device
-        self.base_lod = base_lod
-        self.num_lods = num_lods
-        self.optimizable = optimizable
         self.grid = None
         self.colors = None
         self.normals = None
-        super().__init__(**kwargs)
+        self.init_grid(spc_octree)
 
-    def init_grid(self):
-        """ Uses the OctreeAS / OctreeGrid mechanism to quickly parse the SPC object """
-        # Octree defines the structure of the SPC
-        octree = self.octree
+    def init_grid(self, spc_octree):
+        """ Uses the OctreeAS / OctreeGrid mechanism to quickly parse the SPC object into a Wisp Neural Field.
 
+        Args:
+            spc_octree (torch.ByteTensor):
+                A tensor which holds the topology of the SPC.
+                Each byte represents a single octree cell's occupancy (that is, each bit of that byte represents
+                the occupancy status of a child octree cell), yielding 8 bits for 8 cells.
+                See also https://kaolin.readthedocs.io/en/latest/notes/spc_summary.html
+        """
         # Use features, either colors or normals
         spc_features = self.features_dict
         if "colors" in self.features_dict:
@@ -82,39 +78,28 @@ class SPCField(BaseNeuralField):
             if self.normals is not None:
                 colors = 0.5 * (normals + 1.0)
             else:
-                # TODO (operel): support mono color to display topology
-                raise NotImplementedError('SPCFields currently do not support SPC objects without features')
+                # manufacture colors from point coordinates
+                lengths = torch.tensor([len(spc_octree)], dtype=torch.int32)
+                level, pyramids, exsum = kaolin_ops_spc.scan_octrees(spc_octree, lengths)
+                point_hierarchies = kaolin_ops_spc.generate_points(spc_octree, pyramids, exsum)
+                # get coordinate of highest level
+                colors = point_hierarchies[pyramids[0,1,level]:]
+                # normalize
+                colors = colors/np.power(2, level)
+
             self.colors = colors
 
         # By default assume the SPC keeps features only at the highest LOD.
-        # (unless base_lod and num_lods fields are explicitly set)
-        if self.base_lod is None:
-            # Compute the highest LOD if needed
-            _, pyramid, _ = wisp_spc_ops.octree_to_spc(self.octree)
-            max_level = self.pyramid.shape[-1] - 2
-            self.base_lod = max_level
-        if self.num_lods is None:
-            self.num_lods = 1
+        # Compute the highest LOD:
+        _, pyramid, _ = wisp_spc_ops.octree_to_spc(spc_octree)
+        max_level = pyramid.shape[-1] - 2
 
-        self.grid = OctreeGrid(feature_dim=3,
-                               base_lod=self.base_lod,
-                               num_lods=self.num_lods,
-                               interpolation_type=self.interpolation_type,
-                               multiscale_type=self.multiscale_type,
-                               **self.kwargs)
-        # If the SPC shouldn't be optimized, avoiding full grid initialization is faster
-        if self.optimizable:
-            self.grid.init(octree)
-        else:
-            self.grid.blas.init(octree)
-
-    def get_nef_type(self):
-        """Returns a text keyword of the neural field type.
-
-        Returns:
-            (str): The key type
-        """
-        return 'spc'
+        self.grid = OctreeGrid.from_spc(
+            spc_octree=spc_octree,
+            feature_dim=3,
+            base_lod=max_level,
+            num_lods=0  # SPCFields track features internally, avoiding full OctreeGrid initialization is faster
+        )
 
     @property
     def device(self):
@@ -142,7 +127,6 @@ class SPCField(BaseNeuralField):
             {"rgb": torch.FloatTensor}:
                 - RGB tensor of shape [batch, 1, 3]
         """
-        # TODO(operel): handle features in mid levels
         # find offset to final level to make indices relative to final level
         level = self.grid.blas.max_level
         offset = self.grid.blas.pyramid[1, level]
@@ -150,3 +134,13 @@ class SPCField(BaseNeuralField):
 
         colors = self.colors[ridx_hit, :3].unsqueeze(1)
         return dict(rgb=colors)
+
+    def public_properties(self) -> Dict[str, Any]:
+        """ Wisp modules expose their public properties in a dictionary.
+        The purpose of this method is to give an easy table of outwards facing attributes,
+        for the purpose of logging, gui apps, etc.
+        """
+        properties = {
+            "Grid": self.grid,
+        }
+        return properties

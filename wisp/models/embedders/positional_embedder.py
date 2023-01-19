@@ -6,10 +6,13 @@
 # distribution of this software and related documentation without an express
 # license agreement from NVIDIA CORPORATION & AFFILIATES is strictly prohibited.
 
+from typing import Dict, Any
 import torch
 import torch.nn as nn
+from wisp.core import WispModule
 
-class PositionalEmbedder(nn.Module):
+
+class PositionalEmbedder(WispModule):
     """PyTorch implementation of regular positional embedding, as used in the original NeRF and Transformer papers.
     """
     def __init__(self, num_freq, max_freq_log2, log_sampling=True, include_input=True, input_dim=3):
@@ -62,22 +65,36 @@ class PositionalEmbedder(nn.Module):
             encoded = torch.cat([coords, encoded], dim=-1)
         return encoded
 
-def get_positional_embedder(frequencies, active, input_dim=3):
+    def name(self) -> str:
+        """ A human readable name for the given wisp module. """
+        return "Positional Encoding"
+
+    def public_properties(self) -> Dict[str, Any]:
+        """ Wisp modules expose their public properties in a dictionary.
+        The purpose of this method is to give an easy table of outwards facing attributes,
+        for the purpose of logging, gui apps, etc.
+        """
+        return {
+            "Output Dim": self.out_dim,
+            "Num. Frequencies": self.num_freq,
+            "Max Frequency": f"2^{self.max_freq_log2}",
+            "Include Input": self.include_input
+        }
+
+
+def get_positional_embedder(frequencies, input_dim=3, include_input=True):
     """Utility function to get a positional encoding embedding.
 
     Args:
         frequencies (int): The number of frequencies used to define the PE:
             [2^0, 2^1, 2^2, ... 2^(frequencies - 1)].
-        active (bool): If false, will return the identity function.
         input_dim (int): The input coordinate dimension.
+        include_input (bool): If true, will concatenate the input coords.
 
     Returns:
         (nn.Module, int):
         - The embedding module
         - The output dimension of the embedding.
     """
-    if not active:
-        return nn.Identity(), input_dim
-    else:
-        encoder = PositionalEmbedder(frequencies, frequencies-1, input_dim=input_dim)
-        return encoder, encoder.out_dim
+    encoder = PositionalEmbedder(frequencies, frequencies-1, input_dim=input_dim, include_input=include_input)
+    return encoder, encoder.out_dim

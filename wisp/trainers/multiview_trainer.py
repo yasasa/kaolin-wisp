@@ -14,54 +14,47 @@ import random
 import pandas as pd
 import torch
 from lpips import LPIPS
-from wisp.trainers import BaseTrainer
-from wisp.utils import PerfTimer
+from wisp.trainers import BaseTrainer, log_metric_to_wandb, log_images_to_wandb
 from wisp.ops.image import write_png, write_exr
 from wisp.ops.image.metrics import psnr, lpips, ssim
 from wisp.core import Rays, RenderBuffer
 
+import wandb
+import numpy as np
+from PIL import Image
+
 class MultiviewTrainer(BaseTrainer):
 
-    def pre_epoch(self, epoch):
-        """Override pre_epoch to support pruning.
+    def pre_step(self):
+        """Override pre_step to support pruning.
         """
-        super().pre_epoch(epoch)   
+        super().pre_step()
         
-        if self.extra_args["prune_every"] > -1 and epoch > 0 and epoch % self.extra_args["prune_every"] == 0:
+        if self.extra_args["prune_every"] > -1 and self.iteration > 0 and self.iteration % self.extra_args["prune_every"] == 0:
             self.pipeline.nef.prune()
-            self.init_optimizer()
 
     def init_log_dict(self):
         """Custom log dict.
         """
-        self.log_dict['total_loss'] = 0
-        self.log_dict['total_iter_count'] = 0
+        super().init_log_dict()
         self.log_dict['rgb_loss'] = 0.0
-        self.log_dict['image_count'] = 0
 
-    def step(self, epoch, n_iter, data):
+    def step(self, data):
         """Implement the optimization over image-space loss.
         """
-        self.scene_state.optimization.iteration = n_iter
-
-        timer = PerfTimer(activate=False, show_memory=False)
 
         # Map to device
         rays = data['rays'].to(self.device).squeeze(0)
         img_gts = data['imgs'].to(self.device).squeeze(0)
 
-        timer.check("map to device")
-
-        self.optimizer.zero_grad(set_to_none=True)
-        
-        timer.check("zero grad")
+        self.optimizer.zero_grad()
             
         loss = 0
         
         if self.extra_args["random_lod"]:
             # Sample from a geometric distribution
-            population = [i for i in range(self.pipeline.nef.num_lods)]
-            weights = [2**i for i in range(self.pipeline.nef.num_lods)]
+            population = [i for i in range(self.pipeline.nef.grid.num_lods)]
+            weights = [2**i for i in range(self.pipeline.nef.grid.num_lods)]
             weights = [i/sum(weights) for i in weights]
             lod_idx = random.choices(population, weights)[0]
         else:
@@ -70,7 +63,6 @@ class MultiviewTrainer(BaseTrainer):
 
         with torch.cuda.amp.autocast():
             rb = self.pipeline(rays=rays, lod_idx=lod_idx, channels=["rgb"])
-            timer.check("inference")
 
             # RGB Loss
             #rgb_loss = F.mse_loss(rb.rgb, img_gts, reduction='none')
@@ -79,33 +71,21 @@ class MultiviewTrainer(BaseTrainer):
             rgb_loss = rgb_loss.mean()
             loss += self.extra_args["rgb_loss"] * rgb_loss
             self.log_dict['rgb_loss'] += rgb_loss.item()
-            timer.check("loss")
 
         self.log_dict['total_loss'] += loss.item()
-        self.log_dict['total_iter_count'] += 1
         
         self.scaler.scale(loss).backward()
         self.scaler.step(self.optimizer)
         self.scaler.update()
-
-        timer.check("backward and step")
         
-    def log_tb(self, epoch):
-        log_text = 'EPOCH {}/{}'.format(epoch, self.num_epochs)
-        self.log_dict['total_loss'] /= self.log_dict['total_iter_count']
-        log_text += ' | total loss: {:>.3E}'.format(self.log_dict['total_loss'])
-        self.log_dict['rgb_loss'] /= self.log_dict['total_iter_count']
-        log_text += ' | rgb loss: {:>.3E}'.format(self.log_dict['rgb_loss'])
+    def log_cli(self):
+        log_text = 'EPOCH {}/{}'.format(self.epoch, self.max_epochs)
+        log_text += ' | total loss: {:>.3E}'.format(self.log_dict['total_loss'] / len(self.train_data_loader))
+        log_text += ' | rgb loss: {:>.3E}'.format(self.log_dict['rgb_loss'] / len(self.train_data_loader))
         
-        for key in self.log_dict:
-            if 'loss' in key:
-                self.writer.add_scalar(f'Loss/{key}', self.log_dict[key], epoch)
-
         log.info(log_text)
 
-        self.pipeline.eval()
-
-    def evaluate_metrics(self, epoch, rays, imgs, lod_idx, name=None):
+    def evaluate_metrics(self, rays, imgs, lod_idx, name=None):
         
         ray_os = list(rays.origins)
         ray_ds = list(rays.dirs)
@@ -143,7 +123,7 @@ class MultiviewTrainer(BaseTrainer):
         lpips_total /= len(imgs)  
         ssim_total /= len(imgs)
                 
-        log_text = 'EPOCH {}/{}'.format(epoch, self.num_epochs)
+        log_text = 'EPOCH {}/{}'.format(self.epoch, self.max_epochs)
         log_text += ' | {}: {:.2f}'.format(f"{name} PSNR", psnr_total)
         log_text += ' | {}: {:.6f}'.format(f"{name} SSIM", ssim_total)
         log_text += ' | {}: {:.6f}'.format(f"{name} LPIPS", lpips_total)
@@ -151,19 +131,59 @@ class MultiviewTrainer(BaseTrainer):
  
         return {"psnr" : psnr_total, "lpips": lpips_total, "ssim": ssim_total}
 
-    def validate(self, epoch=0):
+    def render_final_view(self, num_angles, camera_distance):
+        angles = np.pi * 0.1 * np.array(list(range(num_angles + 1)))
+        x = -camera_distance * np.sin(angles)
+        y = self.extra_args["camera_origin"][1]
+        z = -camera_distance * np.cos(angles)
+        for d in range(self.extra_args["num_lods"]):
+            out_rgb = []
+            for idx in tqdm(range(num_angles + 1), desc=f"Generating 360 Degree of View for LOD {d}"):
+                log_metric_to_wandb(f"LOD-{d}-360-Degree-Scene/step", idx, step=idx)
+                out = self.renderer.shade_images(
+                    self.pipeline,
+                    f=[x[idx], y, z[idx]],
+                    t=self.extra_args["camera_lookat"],
+                    fov=self.extra_args["camera_fov"],
+                    lod_idx=d,
+                    camera_clamp=self.extra_args["camera_clamp"]
+                )
+                out = out.image().byte().numpy_dict()
+                if out.get('rgb') is not None:
+                    log_images_to_wandb(f"LOD-{d}-360-Degree-Scene/RGB", out['rgb'].T, idx)
+                    out_rgb.append(Image.fromarray(np.moveaxis(out['rgb'].T, 0, -1)))
+                if out.get('rgba') is not None:
+                    log_images_to_wandb(f"LOD-{d}-360-Degree-Scene/RGBA", out['rgba'].T, idx)
+                if out.get('depth') is not None:
+                    log_images_to_wandb(f"LOD-{d}-360-Degree-Scene/Depth", out['depth'].T, idx)
+                if out.get('normal') is not None:
+                    log_images_to_wandb(f"LOD-{d}-360-Degree-Scene/Normal", out['normal'].T, idx)
+                if out.get('alpha') is not None:
+                    log_images_to_wandb(f"LOD-{d}-360-Degree-Scene/Alpha", out['alpha'].T, idx)
+                wandb.log({})
+        
+            rgb_gif = out_rgb[0]
+            gif_path = os.path.join(self.log_dir, "rgb.gif")
+            rgb_gif.save(gif_path, save_all=True, append_images=out_rgb[1:], optimize=False, loop=0)
+            wandb.log({f"360-Degree-Scene/RGB-Rendering/LOD-{d}": wandb.Video(gif_path)})
+    
+    def validate(self):
         self.pipeline.eval()
 
-        record_dict = self.extra_args
+        # record_dict contains trainer args, but omits torch.Tensor fields which were not explicitly converted to
+        # numpy or some other format. This is required as parquet doesn't support torch.Tensors
+        # (and also for output size considerations)
+        record_dict = {k: v for k, v in self.extra_args.items() if not isinstance(v, torch.Tensor)}
         dataset_name = os.path.splitext(os.path.basename(self.extra_args['dataset_path']))[0]
         model_fname = os.path.abspath(os.path.join(self.log_dir, f'model.pth'))
-        record_dict.update({"dataset_name" : dataset_name, "epoch": epoch, 
+        record_dict.update({"dataset_name" : dataset_name, "epoch": self.epoch, 
                             "log_fname" : self.log_fname, "model_fname": model_fname})
         parent_log_dir = os.path.dirname(self.log_dir)
 
         log.info("Beginning validation...")
-        
-        data = self.dataset.get_images(split=self.extra_args['valid_split'], mip=self.extra_args['mip'])
+
+        validation_split = self.extra_args.get('valid_split', 'val')
+        data = self.dataset.get_images(split=validation_split, mip=self.extra_args['mip'])
         imgs = list(data["imgs"])
 
         img_shape = imgs[0].shape
@@ -174,8 +194,13 @@ class MultiviewTrainer(BaseTrainer):
         if not os.path.exists(self.valid_log_dir):
             os.makedirs(self.valid_log_dir)
 
-        lods = list(range(self.pipeline.nef.num_lods))
-        record_dict.update(self.evaluate_metrics(epoch, data["rays"], imgs, lods[-1], f"lod{lods[-1]}"))
+        lods = list(range(self.pipeline.nef.grid.num_lods))
+        evaluation_results = self.evaluate_metrics(data["rays"], imgs, lods[-1], f"lod{lods[-1]}")
+        record_dict.update(evaluation_results)
+        if self.using_wandb:
+            log_metric_to_wandb("Validation/psnr", evaluation_results['psnr'], self.epoch)
+            log_metric_to_wandb("Validation/lpips", evaluation_results['lpips'], self.epoch)
+            log_metric_to_wandb("Validation/ssim", evaluation_results['ssim'], self.epoch)
         
         df = pd.DataFrame.from_records([record_dict])
         df['lod'] = lods[-1]
@@ -184,3 +209,31 @@ class MultiviewTrainer(BaseTrainer):
             df_ = pd.read_parquet(fname)
             df = pd.concat([df_, df])
         df.to_parquet(fname, index=False)
+
+    def pre_training(self):
+        """
+        Override this function to change the logic which runs before the first training iteration.
+        This function runs once before training starts.
+        """
+        super().pre_training()
+        if self.using_wandb:
+            for d in range(self.extra_args["num_lods"]):
+                wandb.define_metric(f"LOD-{d}-360-Degree-Scene")
+                wandb.define_metric(
+                    f"LOD-{d}-360-Degree-Scene",
+                    step_metric=f"LOD-{d}-360-Degree-Scene/step"
+                )
+
+    def post_training(self):
+        """
+        Override this function to change the logic which runs after the last training iteration.
+        This function runs once after training ends.
+        """
+        wandb_viz_nerf_angles = self.extra_args.get("wandb_viz_nerf_angles", 0)
+        wandb_viz_nerf_distance = self.extra_args.get("wandb_viz_nerf_distance")
+        if self.using_wandb and wandb_viz_nerf_angles != 0:
+            self.render_final_view(
+                num_angles=wandb_viz_nerf_angles,
+                camera_distance=wandb_viz_nerf_distance
+            )
+        super().post_training()

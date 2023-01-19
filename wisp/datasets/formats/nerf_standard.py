@@ -100,18 +100,18 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
     Returns:
         (dict of torch.FloatTensors): Different channels of information from NeRF.
     """
+    if not os.path.exists(root):
+        raise FileNotFoundError(f"NeRF dataset path does not exist: {root}")
+
     transforms = sorted(glob.glob(os.path.join(root, "*.json")))
 
     transform_dict = {}
-
-    train_only = False
 
     if mip is None:
         mip = 0
 
     if len(transforms) == 1:
         transform_dict['train'] = transforms[0]
-        train_only = True
     elif len(transforms) == 3:
         fnames = [os.path.basename(transform) for transform in transforms]
 
@@ -120,11 +120,15 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
             for i, fname in enumerate(fnames):
                 if _split in fname:
                     transform_dict[_split] = transforms[i]
+    elif len(transforms) == 0:
+        raise RuntimeError(f"NeRF dataset folder has no transform *.json files with camera data: {root}")
     else:
-        raise RuntimeError("Unsupported number of splits, there should be ['test', 'train', 'val']")
+        raise RuntimeError(f"NeRF dataset folder has an unsupported number of splits, "
+                           f"there should be ['test', 'train', 'val'], but found: {transforms}.")
 
     if split not in transform_dict:
-        raise RuntimeError(f"Split type ['{split}'] unsupported in the dataset provided")
+        log.warning(f"WARNING: Split type ['{split}'] does not exist in the dataset. Falling back to train data.")
+        split = 'train'
 
     for key in transform_dict:
         with open(transform_dict[key], 'r') as f:

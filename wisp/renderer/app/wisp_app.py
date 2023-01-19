@@ -25,7 +25,7 @@ from wisp.renderer.core.control import CameraControlMode, WispKey, WispMouseButt
 from wisp.renderer.core.control import FirstPersonCameraMode, TrackballCameraMode, TurntableCameraMode
 from wisp.renderer.core.api import add_pipeline_to_scene_graph
 from wisp.renderer.gizmos import Gizmo, WorldGrid, AxisPainter, PrimitivesPainter
-from wisp.renderer.gui import WidgetRendererProperties, WidgetGPUStats, WidgetSceneGraph, WidgetImgui
+from wisp.renderer.gui import WidgetInteractiveVisualizerProperties, WidgetGPUStats, WidgetSceneGraph, WidgetImgui
 
 @contextmanager
 def cuda_activate(img):
@@ -170,22 +170,20 @@ class WispApp(ABC):
         be customized to affect the behaviour of the renderer.
         """
         # Channels available to view over the canvas
-        wisp_state.renderer.available_canvas_channels = ["rgb"]
+        wisp_state.renderer.available_canvas_channels = ["rgb", "depth"]
         wisp_state.renderer.selected_canvas_channel = "rgb"
 
     def create_widgets(self) -> List[WidgetImgui]:
         """ Returns which widgets the gui will display, in order.
         Override to define which gui widgets are used by the wisp app.
         """
-        # TODO(ttakikawa): This should be empty for the base app.
-        return [WidgetGPUStats(), WidgetRendererProperties(), WidgetSceneGraph()]
+        return [WidgetGPUStats(), WidgetInteractiveVisualizerProperties(), WidgetSceneGraph()]
 
     def create_gizmos(self) -> Dict[str, Gizmo]:
         """ Override to define which gizmos are painted on the canvas by the wisp app.
         Gizmos are transient rasterized objects rendered by OpenGL on top of the canvas.
         For example: world grid, axes painter.
         """
-        # TODO(ttakikawa): This should be empty for the base app.
         gizmos = dict()
         grid_size = 10.0
         planes = self.wisp_state.renderer.reference_grids

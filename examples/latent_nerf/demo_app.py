@@ -13,6 +13,7 @@ from wisp.framework import WispState, watch
 from wisp.renderer.app import WispApp
 from wisp.renderer.gui import WidgetImgui
 from wisp.renderer.gizmos import Gizmo
+from wisp.renderer.core.api import request_redraw
 
 
 class DemoApp(WispApp):
@@ -72,8 +73,8 @@ class DemoApp(WispApp):
         """ -- wisp_state.renderer holds the interactive renderer configuration, let's explore it: -- """
 
         # Set the initial window dimensions
-        wisp_state.renderer.canvas_width = 1600
-        wisp_state.renderer.canvas_height = 1600
+        wisp_state.renderer.canvas_width = 1200
+        wisp_state.renderer.canvas_height = 800
 
         # Set which world grid planes should be displayed on the canvas.
         # Options: any combination of 'xy', 'xz', 'yz'. Use [] to turn off the grid.
@@ -100,10 +101,10 @@ class DemoApp(WispApp):
 
     def create_widgets(self) -> List[WidgetImgui]:
         """ Customizes the gui: Defines which widgets the gui will display, in order. """
-        from wisp.renderer.gui import WidgetRendererProperties, WidgetGPUStats, WidgetSceneGraph, WidgetOptimization
+        from wisp.renderer.gui import WidgetInteractiveVisualizerProperties, WidgetGPUStats, WidgetSceneGraph, WidgetOptimization
         widgets = [WidgetGPUStats(),            # Current FPS, memory occupancy, GPU Model
                    WidgetOptimization(),        # Live status of optimization, epochs / iterations count, loss curve
-                   WidgetRendererProperties(),  # Canvas dims, user camera controller & definitions
+                   WidgetInteractiveVisualizerProperties(),  # Canvas dims, user camera controller & definitions
                    WidgetSceneGraph()]          # A scene graph tree with the objects hierarchy and their properties
 
         return widgets
@@ -130,11 +131,16 @@ class DemoApp(WispApp):
         """ A custom event defined for this app.
             When an epoch ends, this handler is invoked to force a redraw() and render() of the canvas if needed.
         """
-        self.canvas_dirty = True    # Request a redraw from the renderer core
+        # Request a redraw from the renderer core.
+        # redraw() will:
+        # - Refresh the scene graph (new objects added will be created within the renderer-core if needed)
+        # - Data layers will regenerate according to up-to-date state.
+        request_redraw(self.wisp_state)
 
         # Request a render if:
         # 1. Too much time have elapsed since the last frame
         # 2. Target FPS is 0 (rendering loop is stalled and the renderer only renders when explicitly requested)
+        # render() ensures the most up to date neural field is displayed.
         if self.is_time_to_render() or self.wisp_state.renderer.target_fps == 0:
             self.render()
 

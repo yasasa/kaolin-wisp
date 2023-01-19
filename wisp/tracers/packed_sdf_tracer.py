@@ -19,17 +19,22 @@ from wisp.tracers import BaseTracer
 class PackedSDFTracer(BaseTracer):
     """Tracer class for sparse SDFs.
 
-    This tracer class expects the use of a feature grid that has a BLAS (i.e. inherits the BLASGrid
-    class).
-    """
+    - Packed: each ray yields a custom number of samples, which are therefore packed in a flat form within a tensor,
+     see: https://kaolin.readthedocs.io/en/latest/modules/kaolin.ops.batch.html#packed
+    - SDF: Signed Distance Function
+    PackedSDFTracer is non-differentiable, and follows the sphere-tracer implementation of
+    Neural Geometric Level of Detail (Takikawa et al. 2021).
 
-    def __init__(self, num_steps=64, step_size=1.0, min_dis=1e-4, **kwargs):
+    This tracer class expects the neural field to expose a BLASGrid: a Bottom-Level-Acceleration-Structure Grid,
+    i.e. a grid that inherits the BLASGrid class for both a feature structure and an occupancy acceleration structure).
+    """
+    def __init__(self, num_steps=128, step_size=1.0, min_dis=0.0003):
         """Set the default trace() arguments. """
-        super().__init__(**kwargs)
+        super().__init__()
         self.num_steps = num_steps
         self.step_size = step_size
         self.min_dis = min_dis
-    
+
     def get_supported_channels(self):
         """Returns the set of channel names this tracer may output.
         
@@ -46,17 +51,18 @@ class PackedSDFTracer(BaseTracer):
         """
         return {"sdf"}
 
-    def trace(self, nef, channels, extra_channels, rays, lod_idx=None, num_steps=64, step_size=1.0, min_dis=1e-4):
+    def trace(self, nef, rays, channels, extra_channels, lod_idx=None, num_steps=64,
+              step_size=1.0, min_dis=1e-4):
         """Trace the rays against the neural field.
 
         Args:
             nef (nn.Module): A neural field that uses a grid class.
-            channels (set): The set of requested channels. The trace method can return channels that 
+            rays (wisp.core.Rays): Ray origins and directions of shape [N, 3]
+            channels (set): The set of requested channels. The trace method can return channels that
                             were not requested since those channels often had to be computed anyways.
             extra_channels (set): If there are any extra channels requested, this tracer will by default
                                   query those extra channels at surface intersection points.
-            rays (wisp.core.Rays): Ray origins and directions of shape [N, 3]
-            lod_idx (int): LOD index to render at. 
+            lod_idx (int): LOD index to render at.
             num_steps (int): The number of steps to use for sphere tracing.
             step_size (float): The multiplier for the sphere tracing steps. 
                                Use a value <1.0 for conservative tracing.
@@ -69,16 +75,17 @@ class PackedSDFTracer(BaseTracer):
         assert nef.grid is not None and "this tracer requires a grid"
         
         if lod_idx is None:
-            lod_idx = nef.num_lods-1
+            lod_idx = nef.grid.num_lods - 1
 
         timer = PerfTimer(activate=False)
-
-        res = float(2**(lod_idx+nef.base_lod))
-        #invres = 1.0 / res
         invres = 1.0
 
         # Trace SPC
-        ridx, pidx, depth = nef.grid.raytrace(rays, nef.grid.active_lods[lod_idx], with_exit=True)
+        raytrace_results = nef.grid.raytrace(rays, nef.grid.active_lods[lod_idx], with_exit=True)
+        ridx = raytrace_results.ridx
+        pidx = raytrace_results.pidx
+        depth = raytrace_results.depth
+
         depth[...,0:1] += 1e-5
 
         first_hit = spc_render.mark_pack_boundaries(ridx)
@@ -94,7 +101,7 @@ class PackedSDFTracer(BaseTracer):
         t = depth[first_hit][...,0:1]
         x = torch.addcmul(nug_o, nug_d, t)
         dist = torch.zeros_like(t)
-        
+
         curr_pidx = pidx[first_hit].long()
         
         timer.check("initial")

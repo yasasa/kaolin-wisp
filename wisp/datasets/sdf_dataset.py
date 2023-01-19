@@ -10,6 +10,7 @@ import torch
 from torch.utils.data import Dataset
 import logging as log
 import kaolin.ops.spc as spc_ops
+from wisp.models.grids import OctreeGrid
 import wisp.ops.mesh as mesh_ops
 import wisp.ops.spc as wisp_spc_ops
 
@@ -17,30 +18,45 @@ import wisp.ops.spc as wisp_spc_ops
 class SDFDataset(Dataset):
     """Base class for single mesh datasets with points sampled only at a given octree sampling region.
     """
-
     def __init__(self, 
-        sample_mode       : list = ['rand', 'rand', 'near', 'near', 'trace'],
-        num_samples       : int = 100000,
-        get_normals       : bool = False,
-        sample_tex        : bool = False,
+        sample_mode       : list       = ['rand', 'rand', 'near', 'near', 'trace'],
+        num_samples       : int        = 100000,
+        get_normals       : bool       = False,
+        sample_tex        : bool       = False,
+        dataset_path      : str        = None,
+        mode_norm         : str        = 'sphere',
+        grid              : OctreeGrid = None,
+        samples_per_voxel : int        = 32 
     ):
         """Construct dataset. This dataset also needs to be initialized.
 
         Args:
             sample_mode (list of str): List of different sample modes. 
                                        See `mesh_ops.point_sample` for more details.
-            num_samples (int): Number of data points to keep in the working set. Whatever samples are not in 
-                               the working set can be sampled with resample.
+            num_samples (int): Number of data points to keep in the working set.
+                               Whatever samples are not in the working set
+                               can be sampled with resample.
             get_normals (bool): If True, will also return normals (estimated by the SDF field).
             sample_tex (bool): If True, will also sample RGB from the nearest texture.
+            dataset_path (str): If set, Path to OBJ file to initialize the dataset.
+            mode_norm (str): Used with dataset_path,
+                             the mode at which the mesh will be normalized in [-1, 1] space.
+            grid (OctreeGrid): If set, an OctreeGrid class initialized from mesh to initialize the 
         """
         self.sample_mode = sample_mode
         self.num_samples = num_samples
         self.get_normals = get_normals
         self.sample_tex = sample_tex
-        self.initialization_mode = None
+        if dataset_path is not None:
+            if grid is not None:
+                raise ValueError("'dataset_path' should not be set with 'grid'")
+            self._init_from_mesh(dataset_path, mode_norm)
+        elif grid is not None:
+            self._init_from_grid(grid, samples_per_voxel)
+        else:
+            raise ValueError("'dataset_path' or 'grid' must be set")
     
-    def init_from_mesh(self, dataset_path, mode_norm='sphere'):
+    def _init_from_mesh(self, dataset_path, mode_norm='sphere'):
         """Initializes the dataset by sampling SDFs from a mesh.
 
         Args:
@@ -59,8 +75,10 @@ class SDFDataset(Dataset):
 
         self.mesh = self.V[self.F]
         self.resample()
-        
-    def init_from_grid(self, grid, samples_per_voxel=32):
+
+    # TODO (operel): grid is only really needed for filtering out points and more efficient 'rand',
+    #  better not store the mesh contents in the extent field
+    def _init_from_grid(self, grid, samples_per_voxel=32):
         """Initializes the dataset by sampling SDFs from an OctreeGrid created from a mesh.
 
         Args:
@@ -73,7 +91,7 @@ class SDFDataset(Dataset):
         if grid.__class__.__name__ != "OctreeGrid" and "OctreeGrid" not in [pclass.__name__ for pclass in grid.__class__.__bases__]:
             raise Exception("Only the OctreeGrid class or derivatives are supported for this initialization mode")
     
-        if not hasattr(grid, 'blas') and hasattr(grid.blas, 'V'):
+        if not hasattr(grid, 'blas') and hasattr(grid.blas, 'extent') and 'vertices' in grid.blas.extent:
             raise Exception("Only the OctreeGrid class or derivatives initialized from mesh are supported for this initialization mode")
 
         if self.get_normals:
@@ -81,7 +99,10 @@ class SDFDataset(Dataset):
 
         self.initialization_mode = "grid"
         self.samples_per_voxel = samples_per_voxel
-        
+
+        vertices = grid.blas.extent['vertices']
+        faces = grid.blas.extent['faces']
+
         level = grid.active_lods[-1]
 
         # Here, corners mean "the bottom left corner of the voxel to sample from"
@@ -97,34 +118,59 @@ class SDFDataset(Dataset):
             if mode == "rand":
                 pass
             elif mode == "near":
-                self.pts_.append(mesh_ops.sample_near_surface(grid.blas.V.cuda(), 
-                                                   grid.blas.F.cuda(), 
+                self.pts_.append(mesh_ops.sample_near_surface(vertices.cuda(),
+                                                   faces.cuda(),
                                                    self.pts_[0].shape[0], 
-                                                   variance=1.0/(2**level)).cpu())
+                                                   variance=1.0 / (2 ** level)).cpu())
             elif mode == "trace":
-                self.pts_.append(mesh_ops.sample_surface(grid.blas.V.cuda(),
-                                               grid.blas.F.cuda(),
-                                               self.pts_[0].shape[0])[0].cpu())
+                self.pts_.append(mesh_ops.sample_surface(vertices.cuda(),
+                                 faces.cuda(),
+                                 self.pts_[0].shape[0])[0].cpu())
             else:
                 raise Exception(f"Sampling mode {mode} not implemented")
 
         # Filter out points which do not belong to the narrowband
         self.pts_ = torch.cat(self.pts_, dim=0)
-        self.pidx = grid.query(self.pts_.cuda(), 0)
+        query_results = grid.query(self.pts_.cuda(), 0)
+        self.pidx = query_results.pidx
         self.pts_ = self.pts_[self.pidx>-1]
     
         # Sample distances and textures.
         if self.sample_tex:
-            self.rgb_, self.hit_pts_, self.d_ = mesh_ops.closest_tex(grid.blas.V, grid.blas.F, 
-                    grid.blas.texv, grid.blas.texf, grid.blas.mats, self.pts_)
+            texv = grid.blas.extent['texv']
+            texf = grid.blas.extent['texf']
+            mats = grid.blas.extent['mats']
+            self.rgb_, self.hit_pts_, self.d_ = mesh_ops.closest_tex(vertices, faces, texv, texf, mats, self.pts_)
         else:
             log.info(f"Computing SDFs for {self.pts_.shape[0]} samples (may take a while)..")
-            self.d_ = mesh_ops.compute_sdf(grid.blas.V, grid.blas.F, self.pts_)
+            self.d_ = mesh_ops.compute_sdf(vertices, faces, self.pts_)
             assert(self.d_.shape[0] == self.pts_.shape[0])
         
         log.info(f"Total Samples: {self.pts_.shape[0]}")
         
         self.resample()
+
+    @classmethod
+    def from_mesh(cls, 
+                  sample_mode  : list = ['rand', 'rand', 'near', 'near', 'trace'],
+                  num_samples  : int  = 100000,
+                  get_normals  : bool = False,
+                  sample_tex   : bool = False,
+                  dataset_path : str  = None,
+                  mode_norm    : str  = 'sphere'):
+        return cls(sample_mode, num_samples, get_normals, sample_tex,
+                   dataset_path=dataset_path, mode_norm=mode_norm)
+
+    @classmethod
+    def from_grid(cls, 
+                  sample_mode       : list       = ['rand', 'rand', 'near', 'near', 'trace'],
+                  num_samples       : int        = 100000,
+                  get_normals       : bool       = False,
+                  sample_tex        : bool       = False,
+                  grid              : OctreeGrid = None,
+                  samples_per_voxel : int        = 32):
+        return cls(sample_mode, num_samples, get_normals, sample_tex,
+                   grid=grid, samples_per_voxel=samples_per_voxel)
 
     def resample(self):
         """Resamples a new working set of SDFs.
@@ -138,14 +184,15 @@ class SDFDataset(Dataset):
 
             self.nrm = None
             if self.get_normals:
-                self.pts, self.nrm = mesh_ops.sample_surface(self.V, self.F, self.num_samples*len(self.sample_mode))
+                self.pts, self.nrm = mesh_ops.sample_surface(self.V, self.F,
+                                                             self.num_samples * len(self.sample_mode))
                 self.nrm = self.nrm.cpu()
             else:
                 self.pts = mesh_ops.point_sample(self.V, self.F, self.sample_mode, self.num_samples)
 
             if self.sample_tex:
                 self.rgb, _, self.d = mesh_ops.closest_tex(self.V.cuda(), self.F.cuda(), 
-                                               self.texv, self.texf, self.mats, self.pts)
+                                                           self.texv, self.texf, self.mats, self.pts)
                 self.rgb = self.rgb.cpu()
             else:
                 self.d = mesh_ops.compute_sdf(self.V.cuda(), self.F.cuda(), self.pts.cuda())   
