@@ -20,6 +20,11 @@ from wisp.models import grids
 from wisp import tracers
 from wisp import datasets
 
+from wisp.models.grids import BLASGrid, OctreeGrid, CodebookOctreeGrid, TriplanarGrid, HashGrid
+from wisp.models.nefs import BaseNeuralField, NeuralRadianceField
+from wisp.tracers import BaseTracer, PackedRFTracer
+from wisp.models.pipeline import Pipeline
+
 # This file contains all the configuration and command-line parsing general to all app
 
 __all__ = [
@@ -421,7 +426,8 @@ def parse_args(parser, args=None) -> argparse.Namespace:
         args    : The parsed arguments, as a flat configuration.
     """
 
-    if args is None:
+    no_args = args is None
+    if no_args:
         args = parser.parse_args()
     defaults_dict = dict()
 
@@ -432,7 +438,10 @@ def parse_args(parser, args=None) -> argparse.Namespace:
                 defaults_dict[key].update(val)
             else:
                 defaults_dict[key] = val
-        args = parser.parse_args()
+        if no_args:
+            args = parser.parse_args()
+        else:
+            args = parser.parse_args("")
 
     for key, val in defaults_dict.items():
         cmd_line_val = getattr(args, key)
@@ -441,3 +450,164 @@ def parse_args(parser, args=None) -> argparse.Namespace:
         setattr(args, key, val)
 
     return args
+
+def load_grid(args, dataset: torch.utils.data.Dataset) -> BLASGrid:
+    """ Wisp's implementation of NeRF uses feature grids to improve the performance and quality (allowing therefore,
+    interactivity).
+    This function loads the feature grid to use within the neural pipeline.
+    Grid choices are interesting to explore, so we leave the exact backbone type configurable,
+    and show how grid instances may be explicitly constructed.
+    Grids choices, for example, are: OctreeGrid, TriplanarGrid, HashGrid, CodebookOctreeGrid
+    See corresponding grid constructors for each of their arg details.
+    """
+    grid = None
+    # Optimization: For octrees based grids, if dataset contains depth info, initialize only cells known to be occupied
+    if dataset is not None:
+        has_depth_supervision = getattr(dataset, "coords", None) is not None
+    else:
+        assert args.grid_type not in ["OctreeGrid", "CodebookOctreeGrid"], "dataset must be provided"
+
+    if args.grid_type == "OctreeGrid":
+        if has_depth_supervision:
+            grid = OctreeGrid.from_pointcloud(
+                pointcloud=dataset.coords,
+                feature_dim=args.feature_dim,
+                base_lod=args.base_lod,
+                num_lods=args.num_lods,
+                interpolation_type=args.interpolation_type,
+                multiscale_type=args.multiscale_type,
+                feature_std=args.feature_std,
+                feature_bias=args.feature_bias,
+            )
+        else:
+            grid = OctreeGrid.make_dense(
+                feature_dim=args.feature_dim,
+                base_lod=args.base_lod,
+                num_lods=args.num_lods,
+                interpolation_type=args.interpolation_type,
+                multiscale_type=args.multiscale_type,
+                feature_std=args.feature_std,
+                feature_bias=args.feature_bias,
+            )
+    elif args.grid_type == "CodebookOctreeGrid":
+        if has_depth_supervision:
+            grid = CodebookOctreeGrid.from_pointcloud(
+                pointcloud=dataset.coords,
+                feature_dim=args.feature_dim,
+                base_lod=args.base_lod,
+                num_lods=args.num_lods,
+                interpolation_type=args.interpolation_type,
+                multiscale_type=args.multiscale_type,
+                feature_std=args.feature_std,
+                feature_bias=args.feature_bias,
+                codebook_bitwidth=args.codebook_bitwidth
+            )
+        else:
+            grid = CodebookOctreeGrid.make_dense(
+                feature_dim=args.feature_dim,
+                base_lod=args.base_lod,
+                num_lods=args.num_lods,
+                interpolation_type=args.interpolation_type,
+                multiscale_type=args.multiscale_type,
+                feature_std=args.feature_std,
+                feature_bias=args.feature_bias,
+                codebook_bitwidth=args.codebook_bitwidth
+            )
+    elif args.grid_type == "TriplanarGrid":
+        grid = TriplanarGrid(
+            feature_dim=args.feature_dim,
+            base_lod=args.base_lod,
+            num_lods=args.num_lods,
+            interpolation_type=args.interpolation_type,
+            multiscale_type=args.multiscale_type,
+            feature_std=args.feature_std,
+            feature_bias=args.feature_bias,
+        )
+    elif args.grid_type == "HashGrid":
+        # "geometric" - determines the resolution of the grid using geometric sequence initialization from InstantNGP,
+        if args.tree_type == "geometric":
+            grid = HashGrid.from_geometric(
+                feature_dim=args.feature_dim,
+                num_lods=args.num_lods,
+                multiscale_type=args.multiscale_type,
+                feature_std=args.feature_std,
+                feature_bias=args.feature_bias,
+                codebook_bitwidth=args.codebook_bitwidth,
+                min_grid_res=args.min_grid_res,
+                max_grid_res=args.max_grid_res,
+                blas_level=args.blas_level
+            )
+        # "quad" - determines the resolution of the grid using an octree sampling pattern.
+        elif args.tree_type == "octree":
+            grid = HashGrid.from_octree(
+                feature_dim=args.feature_dim,
+                base_lod=args.base_lod,
+                num_lods=args.num_lods,
+                multiscale_type=args.multiscale_type,
+                feature_std=args.feature_std,
+                feature_bias=args.feature_bias,
+                codebook_bitwidth=args.codebook_bitwidth,
+                blas_level=args.blas_level
+            )
+    else:
+        raise ValueError(f"Unknown grid_type argument: {args.grid_type}")
+    return grid
+
+
+def load_neural_field(args, dataset: torch.utils.data.Dataset) -> BaseNeuralField:
+    """ Creates a "Neural Field" instance which converts input coordinates to some output signal.
+    Here a NeuralRadianceField is created, which maps 3D coordinates (+ 2D view direction) -> RGB + density.
+    The NeuralRadianceField uses spatial feature grids internally for faster feature interpolation and raymarching.
+    """
+    grid = load_grid(args=args, dataset=dataset)
+    nef = NeuralRadianceField(
+        grid=grid,
+        pos_embedder=args.pos_embedder,
+        view_embedder=args.view_embedder,
+        position_input=args.position_input,
+        pos_multires=args.pos_multires,
+        view_multires=args.view_multires,
+        activation_type=args.activation_type,
+        layer_type=args.layer_type,
+        hidden_dim=args.hidden_dim,
+        num_layers=args.num_layers,
+        prune_density_decay=args.prune_density_decay,   # Used only for grid types which support pruning
+        prune_min_density=args.prune_min_density,        # Used only for grid types which support pruning
+        bg_color=args.bg_color
+    )
+    return nef
+
+
+def load_tracer(args) -> BaseTracer:
+    """ Wisp "Tracers" are responsible for taking input rays, marching them through the neural field to render
+    an output RenderBuffer.
+    Wisp's implementation of NeRF uses the PackedRFTracer to trace the neural field:
+    - Packed: each ray yields a custom number of samples, which are therefore packed in a flat form within a tensor,
+     see: https://kaolin.readthedocs.io/en/latest/modules/kaolin.ops.batch.html#packed
+    - RF: Radiance Field
+    PackedRFTracer is employed within the training loop, and is responsible for making use of the neural field's
+    grid to generate samples and decode them to pixel values.
+    """
+    tracer = PackedRFTracer(
+        raymarch_type=args.raymarch_type,   # Chooses the ray-marching algorithm
+        num_steps=args.num_steps,           # Number of steps depends on raymarch_type
+        bg_color=args.bg_color
+    )
+    return tracer
+
+
+def load_neural_pipeline(args, dataset, device) -> Pipeline:
+    """ In Wisp, a Pipeline comprises of a neural field + a tracer (the latter is optional in some cases).
+    Together, they form the complete pipeline required to render a neural primitive from input rays / coordinates.
+    """
+    nef = load_neural_field(args=args, dataset=dataset)
+    tracer = load_tracer(args=args)
+    pipeline = Pipeline(nef=nef, tracer=tracer)
+    if args.pretrained:
+        print("Loading pretrained model from {}". format(args.pretrained))
+        if args.model_format == "full":
+            pipeline = torch.load(args.pretrained)
+        else:
+            pipeline.load_state_dict(torch.load(args.pretrained))
+    pipeline.to(device)
+    return pipeline

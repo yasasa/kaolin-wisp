@@ -108,7 +108,7 @@ class NeuralRadianceField(BaseNeuralField):
             self.init_decoders(activation_type, layer_type, num_layers, hidden_dim)
 
         if bg_color == 'predict':
-            print('Use bg decoder')
+            print('WISP: initializing bg decoder')
             self.decoder_bgcolor = BasicDecoder(self.pos_embed_dim + self.view_embed_dim + 1, 3, get_activation_class(self.activation_type), True,
                                             layer=get_layer_class(self.layer_type), num_layers=self.num_layers+1,
                                             hidden_dim=self.hidden_dim, skip=[])
