@@ -130,7 +130,6 @@ class PackedRFTracer(BaseTracer):
         num_samples = samples.shape[0]
         color, density = nef(coords=samples, ray_d=hit_ray_d, lod_idx=lod_idx, channels=["rgb", "density"])
         density = density.reshape(num_samples, 1)    # Protect against squeezed return shape
-        del ridx
 
         # Compute optical thickness
         tau = density * deltas
@@ -150,8 +149,7 @@ class PackedRFTracer(BaseTracer):
 
             # Query bg colours directly from rays
             ray_colors_bg = nef.forward_bg(rays.origins, rays.dirs, hit.type_as(rays.origins).reshape(N, 1)).type_as(ray_colors)
-            del ridx, rays
-            timer.check("Background RGB")
+            del ridx
 
             # Composite fg and bg when rays hit, and default to bg when rays miss
             rgb = ray_colors_bg.clone()

@@ -426,7 +426,6 @@ def parse_args(parser, args=None) -> argparse.Namespace:
     defaults_dict = dict()
 
     if args.config is not None:
-        print('hi2')
         config_defaults_dict = parse_yaml_config(args.config, parser)
         for key, val in config_defaults_dict.items():
             if key in defaults_dict:
