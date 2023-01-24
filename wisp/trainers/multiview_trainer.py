@@ -38,7 +38,9 @@ class MultiviewTrainer(BaseTrainer):
         """
         super().init_log_dict()
         self.log_dict['rgb_loss'] = 0.0
-
+        self.log_dict['depth_loss'] = 0.0
+        self.log_dict['sparsity_loss'] = 0.0
+                    
     def step(self, data):
         """Implement the optimization over image-space loss.
         """
@@ -46,6 +48,9 @@ class MultiviewTrainer(BaseTrainer):
         # Map to device
         rays = data['rays'].to(self.device).squeeze(0)
         img_gts = data['imgs'].to(self.device).squeeze(0)
+        depth_gts = None
+        if "depths" in data:
+            depth_gts = data['depths'].to(self.device).squeeze(0)
 
         self.optimizer.zero_grad()
             
@@ -62,14 +67,30 @@ class MultiviewTrainer(BaseTrainer):
             lod_idx = None
 
         with torch.cuda.amp.autocast():
-            rb = self.pipeline(rays=rays, lod_idx=lod_idx, channels=["rgb"])
+            rb = self.pipeline(rays=rays, lod_idx=lod_idx, channels=["rgb", "depth", "alpha"])
 
             # RGB Loss
             #rgb_loss = F.mse_loss(rb.rgb, img_gts, reduction='none')
             rgb_loss = torch.abs(rb.rgb[..., :3] - img_gts[..., :3])
             
+            
             rgb_loss = rgb_loss.mean()
             loss += self.extra_args["rgb_loss"] * rgb_loss
+            
+            if depth_gts is not None:
+                hit = depth_gts > 0.
+                depth_loss = torch.abs(rb.depth[hit] - depth_gts[hit])
+                if depth_loss.numel() > 0:
+                    depth_loss = depth_loss.mean()
+                    loss += depth_loss
+                    self.log_dict['depth_loss'] += depth_loss.item()
+                    
+                sparsity_loss = 0 * torch.sum(rb.alpha[~hit]) * 1e-1
+    #            loss += sparsity_loss
+                self.log_dict['sparsity_loss'] += sparsity_loss.item()
+                
+                
+                
             self.log_dict['rgb_loss'] += rgb_loss.item()
 
         self.log_dict['total_loss'] += loss.item()
@@ -82,6 +103,8 @@ class MultiviewTrainer(BaseTrainer):
         log_text = 'EPOCH {}/{}'.format(self.epoch, self.max_epochs)
         log_text += ' | total loss: {:>.3E}'.format(self.log_dict['total_loss'] / len(self.train_data_loader))
         log_text += ' | rgb loss: {:>.3E}'.format(self.log_dict['rgb_loss'] / len(self.train_data_loader))
+        log_text += ' | depth loss: {:>.3E}'.format(self.log_dict['depth_loss'] / len(self.train_data_loader))
+        log_text += ' | sparsity loss: {:>.3E}'.format(self.log_dict['sparsity_loss'] / len(self.train_data_loader))
         
         log.info(log_text)
 

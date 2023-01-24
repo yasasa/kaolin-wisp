@@ -72,6 +72,7 @@ class MultiviewDataset(Dataset):
             self.data["depths"] = self.data["depths"].reshape(self.num_imgs, -1, 1)
         if "masks" in self.data:
             self.data["masks"] = self.data["masks"].reshape(self.num_imgs, -1, 1)
+        print(self.data.keys())
 
     def get_images(self, split='train', mip=None):
         """Will return the dictionary of image tensors.
@@ -89,6 +90,7 @@ class MultiviewDataset(Dataset):
         if self.multiview_dataset_format == "standard":
             data = load_nerf_standard_data(self.root, split,
                                             bg_color=self.bg_color, num_workers=self.dataset_num_workers, mip=self.mip)
+            print(data.keys())
         elif self.multiview_dataset_format == "rtmv":
             if split == 'train':
                 data = load_rtmv_data(self.root, split,
@@ -121,6 +123,8 @@ class MultiviewDataset(Dataset):
         out = {}
         out['rays'] = self.data["rays"][idx]
         out['imgs'] = self.data["imgs"][idx]
+        if "depths" in self.data:
+            out['depths'] = self.data["depths"][idx]
 
         if self.transform is not None:
             out = self.transform(out)
@@ -140,5 +144,7 @@ class MultiviewDataset(Dataset):
             dist_min=self.data["rays"].dist_min,
             dist_max=self.data["rays"].dist_max)
         out['imgs'] = self.data["imgs"][idx, ray_idx]
+        if "depths" in self.data:
+            out['depths'] = self.data["depths"][idx, ray_idx]
         
         return out

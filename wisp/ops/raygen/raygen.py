@@ -37,7 +37,7 @@ def _to_ndc_coords(pixel_x, pixel_y, camera):
     return pixel_x, pixel_y
 
 
-def generate_pinhole_rays(camera: Camera, coords_grid: torch.Tensor):
+def generate_pinhole_rays(camera: Camera, coords_grid: torch.Tensor, return_ndc=False):
     """Default ray generation function for pinhole cameras.
 
     This function assumes that the principal point (the pinhole location) is specified by a 
@@ -74,16 +74,18 @@ def generate_pinhole_rays(camera: Camera, coords_grid: torch.Tensor):
                            -pixel_y * camera.tan_half_fov(CameraFOV.VERTICAL),
                            -torch.ones_like(pixel_x)), dim=-1)
 
-    ray_dir = ray_dir.reshape(-1, 3)    # Flatten grid rays to 1D array
-    ray_orig = torch.zeros_like(ray_dir)
+    ray_dir_ = ray_dir.reshape(-1, 3)    # Flatten grid rays to 1D array
+    ray_orig = torch.zeros_like(ray_dir_)
 
     # Transform from camera to world coordinates
-    ray_orig, ray_dir = camera.extrinsics.inv_transform_rays(ray_orig, ray_dir)
+    ray_orig, ray_dir = camera.extrinsics.inv_transform_rays(ray_orig, ray_dir_)
     ray_dir /= torch.linalg.norm(ray_dir, dim=-1, keepdim=True)
     ray_orig, ray_dir = ray_orig[0], ray_dir[0]  # Assume a single camera
 
-    return Rays(origins=ray_orig, dirs=ray_dir, dist_min=camera.near, dist_max=camera.far)
-
+    if return_ndc:
+        return Rays(origins=ray_orig, dirs=ray_dir, dist_min=camera.near, dist_max=camera.far), ray_dir_
+    else:
+        return Rays(origins=ray_orig, dirs=ray_dir, dist_min=camera.near, dist_max=camera.far)
 
 def generate_ortho_rays(camera: Camera, coords_grid: torch.Tensor):
     # coords_grid should remain immutable (a new tensor is implicitly created here)

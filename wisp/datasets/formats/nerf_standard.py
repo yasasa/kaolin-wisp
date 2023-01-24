@@ -42,34 +42,56 @@ def _load_standard_imgs(frame, root, mip=None):
         (dict): Dictionary of the image and pose.
     """
     fpath = os.path.join(root, frame['file_path'].replace("\\", "/"))
+    if 'depth_file_path' in frame:
+        depth_fpath = os.path.join(root, frame['depth_file_path'].replace("\\","/"))
+    else:
+        depth_fpath = None
+    
 
     basename = os.path.basename(os.path.splitext(fpath)[0])
     if os.path.splitext(fpath)[1] == "":
         # Assume PNG file if no extension exists... the NeRF synthetic data follows this convention.
         fpath += '.png'
+        
+    
+    if depth_fpath and os.path.splitext(depth_fpath)[1] == "":
+        # Assume PNG file if no extension exists... the NeRF synthetic data follows this convention.
+        depth_fpath += '.png'
 
     # For some reason instant-ngp allows missing images that exist in the transform but not in the data.
     # Handle this... also handles the above case well too.
-    if os.path.exists(fpath):
-        img = imageio.imread(fpath)
-        img = skimage.img_as_float32(img)
-        if mip is not None:
-            img = resize_mip(img, mip, interpolation=cv2.INTER_AREA)
-        return dict(basename=basename,
-                    img=torch.FloatTensor(img), pose=torch.FloatTensor(np.array(frame['transform_matrix'])))
+    def load_single_image(fpath, mip):
+        if os.path.exists(fpath):
+            img = imageio.imread(fpath)
+            img = skimage.img_as_float32(img)
+            if mip is not None:
+                img = resize_mip(img, mip, interpolation=cv2.INTER_AREA)
+            return img
+        else:
+            # log.info(f"File name {fpath} doesn't exist. Ignoring.")
+            return None
+            
+    rgb = load_single_image(fpath, mip)
+    if depth_fpath:
+        depth = torch.FloatTensor(load_single_image(depth_fpath, mip))
     else:
-        # log.info(f"File name {fpath} doesn't exist. Ignoring.")
+        depth = None
+    
+    if rgb is not None:
+        return dict(basename=basename,
+                img=torch.FloatTensor(rgb), depth=depth,  pose=torch.FloatTensor(np.array(frame['transform_matrix'])))
+    else:
         return None
-
+        
 def _parallel_load_standard_imgs(args):
     """Internal function for multiprocessing.
     """
     torch.set_num_threads(1)
     result = _load_standard_imgs(args['frame'], args['root'], mip=args['mip'])
     if result is None:
-        return dict(basename=None, img=None, pose=None)
+        return dict(basename=None, img=None, pose=None, depth=None)
     else:
-        return dict(basename=result['basename'], img=result['img'], pose=result['pose'])
+        return dict(basename=result['basename'], img=result['img'], pose=result['pose'], depth=result['depth'])
 
 def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-1, mip=None):
     """Standard loading function.
@@ -137,6 +159,7 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
     imgs = []
     poses = []
     basenames = []
+    depths = []
 
     if num_workers > 0:
         # threading loading images
@@ -150,12 +173,15 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
                 basename = result['basename']
                 img = result['img']
                 pose = result['pose']
+                depth = result['depth']
                 if basename is not None:
                     basenames.append(basename)
                 if img is not None:
                     imgs.append(img)
                 if pose is not None:
                     poses.append(pose)
+                if depth is not None:
+                    depths.append(depth)
         finally:
             p.close()
             p.join()
@@ -166,9 +192,13 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
                 basenames.append(_data["basename"])
                 imgs.append(_data["img"])
                 poses.append(_data["pose"])
+                if _data["depth"] is not None:
+                    depths.append(_data["depth"])
 
     imgs = torch.stack(imgs)
     poses = torch.stack(poses)
+    if len(depths) > 0:
+        depths = torch.stack(depths)
 
     # TODO(ttakikawa): Assumes all images are same shape and focal. Maybe breaks in general...
     h, w = imgs[0].shape[:2]
@@ -238,6 +268,7 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
     default_far = 6.0
 
     rays = []
+    ray_grids = []
 
     cameras = dict()
     for i in range(imgs.shape[0]):
@@ -259,14 +290,22 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
         cameras[basenames[i]] = camera
         ray_grid = generate_centered_pixel_coords(camera.width, camera.height,
                                                   camera.width, camera.height, device='cuda')
-        rays.append \
-            (generate_pinhole_rays(camera.to(ray_grid[0].device), ray_grid).reshape(camera.height, camera.width, 3).to
-                ('cpu'))
+        rays_, ray_grid = generate_pinhole_rays(camera.to(ray_grid[0].device), ray_grid, True)
+        rays_ = rays_.reshape(camera.height, camera.width, 3).to('cpu')
+        rays.append(rays_)
+        
+        ray_grids.append(ray_grid.reshape(camera.height, camera.width, 3).to('cpu'))
 
     rays = Rays.stack(rays).to(dtype=torch.float)
+    ray_grids = torch.stack(ray_grids)
 
     rgbs = imgs[... ,:3]
     alpha = imgs[... ,3:4]
+    ray_grids = ray_grids / ray_grids.norm(dim=-1, keepdim=True)
+    if len(depths) > 0:
+        depths = depths / -ray_grids[..., -1] / aabb_scale
+    else:
+        depths = None
     if alpha.numel() == 0:
         masks = torch.ones_like(rgbs[... ,0:1]).bool()
     else:
@@ -279,5 +318,11 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
             rgbs[... ,:3] *= alpha
             rgbs[... ,:3] += ( 1 -alpha)
             rgbs = np.clip(rgbs, 0.0, 1.0)
+            
 
-    return {"imgs": rgbs, "masks": masks, "rays": rays, "cameras": cameras}
+    out = {"imgs": rgbs, "masks": masks, "rays": rays, "cameras": cameras}
+    if depths is not None:
+        depths[depths > 1000.] = 0.
+        out["depths"] = depths
+    
+    return out

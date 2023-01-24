@@ -129,6 +129,14 @@ def parse_options():
     nef_group.add_argument('--view-embedder', type=str, choices=['none', 'identity', 'positional'],
                            default='positional',
                            help='MLP Decoder of neural field: Positional embedder used to encode view direction')
+
+    nef_group.add_argument('--density_decoder', type=str, choices=['none', 'basic'],
+                           default='basic',
+                           help='Type of decoder, if none, then simple averaging of features will be used')
+
+    nef_group.add_argument('--color_decoder', type=str, choices=['none', 'basic'],
+                           default='basic',
+                           help='Type of decoder, if none, then simple averaging of features will be used')
     nef_group.add_argument('--position-input', type=bool, default=False,
                            help='If True, position coords will be concatenated to the '
                                 'features / positional embeddings when fed into the decoder.')
@@ -564,6 +572,8 @@ def load_neural_field(args, dataset: torch.utils.data.Dataset) -> BaseNeuralFiel
         grid=grid,
         pos_embedder=args.pos_embedder,
         view_embedder=args.view_embedder,
+        density_decoder=args.density_decoder,
+        color_decoder=args.color_decoder,
         position_input=args.position_input,
         pos_multires=args.pos_multires,
         view_multires=args.view_multires,

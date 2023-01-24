@@ -21,4 +21,6 @@ class SampleRays:
         out = {}
         out['rays'] = inputs['rays'][ray_idx].contiguous()
         out['imgs'] = inputs['imgs'][ray_idx].contiguous()
+        if 'depths' in inputs:
+            out['depths'] = inputs['depths'][ray_idx].contiguous()
         return out
