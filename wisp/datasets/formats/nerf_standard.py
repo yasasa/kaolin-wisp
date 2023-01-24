@@ -298,14 +298,24 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
 
     rays = Rays.stack(rays).to(dtype=torch.float)
     ray_grids = torch.stack(ray_grids)
+    
+    ray_ends = rays.origins + rays.dirs * rays.dist_max
 
     rgbs = imgs[... ,:3]
     alpha = imgs[... ,3:4]
     ray_grids = ray_grids / ray_grids.norm(dim=-1, keepdim=True)
+    
     if len(depths) > 0:
         depths = depths / -ray_grids[..., -1] / aabb_scale
+        print(depths.shape, rays.origins.shape, rays.dirs.shape)
+        positions = rays.origins + rays.dirs * depths[..., None]
+        dist = positions.norm(dim=-1, keepdim=False)
+        mask = dist > 1.
+        depths[mask] = 0.
+        print(mask.sum())
     else:
         depths = None
+        
     if alpha.numel() == 0:
         masks = torch.ones_like(rgbs[... ,0:1]).bool()
     else:
@@ -322,7 +332,6 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
 
     out = {"imgs": rgbs, "masks": masks, "rays": rays, "cameras": cameras}
     if depths is not None:
-        depths[depths > 1000.] = 0.
         out["depths"] = depths
     
     return out
