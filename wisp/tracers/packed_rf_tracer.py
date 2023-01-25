@@ -148,7 +148,7 @@ class PackedRFTracer(BaseTracer):
         if bg_color == 'predict':
 
             # Query bg colours directly from rays
-            ray_colors_bg = nef.forward_bg(rays.origins, rays.dirs, hit.type_as(rays.origins).reshape(N, 1)).type_as(ray_colors)
+            ray_colors_bg = nef.forward_bg(rays, hit.type_as(rays.origins).reshape(N, 1)).type_as(ray_colors)
             del ridx
 
             # Composite fg and bg when rays hit, and default to bg when rays miss

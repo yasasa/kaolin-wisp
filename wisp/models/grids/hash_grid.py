@@ -79,9 +79,12 @@ class HashGrid(BLASGrid):
         self.codebook = nn.ParameterList([])
         for res in resolutions:
             num_pts = res ** 3
-            fts = torch.zeros(min(self.codebook_size, num_pts), self.feature_dim)
-            fts += torch.randn_like(fts) * self.feature_std
-            self.codebook.append(nn.Parameter(fts))
+            density_fts = torch.zeros(min(self.codebook_size, num_pts), 1)
+            color_fts = torch.zeros(min(self.codebook_size, num_pts), feature_dim - 1)
+            density_fts += torch.randn_like(density_fts) * self.feature_std
+            color_fts += torch.randn_like(color_fts) * self.feature_std
+            #fts += torch.randn_like(fts) * self.feature_std
+            self.codebook.append(nn.ParameterDict({"density": density_fts, "codebookcolor": color_fts}))
 
     @classmethod
     def from_octree(cls,
@@ -214,7 +217,6 @@ class HashGrid(BLASGrid):
         if coords.ndim == 3:    # flatten num_samples dim with batch for cuda call
             batch, num_samples, coords_dim = coords.shape  # batch x num_samples
             coords = coords.reshape(batch * num_samples, coords_dim)
-
         feats = grid_ops.hashgrid(coords, self.resolutions, self.codebook_bitwidth, lod_idx, self.codebook)
 
         if self.multiscale_type == 'cat':

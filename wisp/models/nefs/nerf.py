@@ -33,6 +33,8 @@ class NeuralRadianceField(BaseNeuralField):
                  view_multires: int = 4,
                  position_input: bool = False,
                  # decoder args
+                 color_decoder: str = 'basic',
+                 density_decoder: str = 'basic',
                  activation_type: str = 'relu',
                  layer_type: str = 'none',
                  hidden_dim: int = 128,
@@ -97,21 +99,21 @@ class NeuralRadianceField(BaseNeuralField):
         self.pos_embedder, self.pos_embed_dim = self.init_embedder(pos_embedder, pos_multires,
                                                                    include_input=position_input)
         self.view_embedder, self.view_embed_dim = self.init_embedder(view_embedder, view_multires,
-                                                                     include_input=True)
-
+                                                                     include_input=view_embedder!='none')
         # Init Decoder
         self.activation_type = activation_type
         self.layer_type = layer_type
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
+        
         self.decoder_density, self.decoder_color = \
-            self.init_decoders(activation_type, layer_type, num_layers, hidden_dim)
+            self.init_decoders(activation_type, layer_type, num_layers, hidden_dim, density_decoder, color_decoder)
 
         if bg_color == 'predict':
             print('WISP: initializing bg decoder')
-            self.decoder_bgcolor = BasicDecoder(self.pos_embed_dim + self.view_embed_dim + 1, 3, get_activation_class(self.activation_type), True,
+            self.decoder_bgcolor = BasicDecoder(self.pos_embed_dim + self.view_embed_dim, 3, get_activation_class(self.activation_type), True,
                                             layer=get_layer_class(self.layer_type), num_layers=self.num_layers+1,
-                                            hidden_dim=self.hidden_dim, skip=[])
+                                            hidden_dim=self.hidden_dim*2, skip=[])
 
         self.prune_density_decay = prune_density_decay
         self.prune_min_density = prune_min_density
@@ -131,7 +133,7 @@ class NeuralRadianceField(BaseNeuralField):
             raise NotImplementedError(f'Unsupported embedder type for NeuralRadianceField: {embedder_type}')
         return embedder, embed_dim
 
-    def init_decoders(self, activation_type, layer_type, num_layers, hidden_dim):
+    def init_decoders(self, activation_type, layer_type, num_layers, hidden_dim, density_decoder, color_decoder):
         """Initializes the decoder object.
         """
         decoder_density = BasicDecoder(input_dim=self.density_net_input_dim(),
@@ -143,6 +145,9 @@ class NeuralRadianceField(BaseNeuralField):
                                        hidden_dim=hidden_dim,
                                        skip=[])
         decoder_density.lout.bias.data[0] = 1.0
+        
+        if density_decoder == 'none':
+            decoder_density = None
 
         decoder_color = BasicDecoder(input_dim=self.color_net_input_dim(),
                                      output_dim=3,
@@ -152,6 +157,9 @@ class NeuralRadianceField(BaseNeuralField):
                                      num_layers=num_layers + 1,
                                      hidden_dim=hidden_dim,
                                      skip=[])
+        if color_decoder == 'none':
+            decoder_color = None
+            
         return decoder_density, decoder_color
 
     def prune(self):
@@ -214,15 +222,22 @@ class NeuralRadianceField(BaseNeuralField):
         batch, _ = coords.shape
 
         # Embed coordinates into high-dimensional vectors with the grid.
-        feats = self.grid.interpolate(coords, lod_idx).reshape(batch, self.effective_feature_dim())
+        feats = self.grid.interpolate(coords, lod_idx)
+        feats = feats.reshape(batch, self.effective_feature_dim())
 
         # Optionally concat the positions to the embedding
         if self.pos_embedder is not None:
             embedded_pos = self.pos_embedder(coords).view(batch, self.pos_embed_dim)
             feats = torch.cat([feats, embedded_pos], dim=-1)
+        
+        if self.decoder_density is None or self.decoder_color is None:
+            avg_feats = feats.view(batch, self.grid.num_lods, self.grid.feature_dim).mean(dim=1)
 
         # Decode high-dimensional vectors to density features.
-        density_feats = self.decoder_density(feats)
+        if self.decoder_density is not None:
+            density_feats = self.decoder_density(feats)
+        else:
+            density_feats = avg_feats[:, 0].view(-1, 1)
 
         # Concatenate embedded view directions.
         if self.view_embedder is not None:
@@ -233,24 +248,30 @@ class NeuralRadianceField(BaseNeuralField):
 
         # Colors are values [0, 1] floats
         # colors ~ (batch, 3)
-        colors = torch.sigmoid(self.decoder_color(fdir))
+        
+        if self.decoder_color is not None:
+            colors = torch.sigmoid(self.decoder_color(fdir))
+        else:
+            colors = torch.sigmoid(avg_feats[:, 1:])
 
         # Density is [particles / meter], so need to be multiplied by distance
         # density ~ (batch, 1)
         density = torch.relu(density_feats[...,0:1])
         return dict(rgb=colors, density=density)
 
-    def forward_bg(self, rays_origins, rays_dirs, rays_is_hit):
+    def forward_bg(self, rays, rays_is_hit):
         '''
         Return bg rgb for each ray
         '''
 
-        origin_embeddings = self.pos_embedder(rays_origins)
-        view_embeddings = self.view_embedder(-rays_dirs)
+       # origin_embeddings = self.pos_embedder(rays_origins)
+        p = rays.origins + rays.dirs * rays.dist_max
+        pos_embeddings = self.pos_embedder(p)
+        view_embeddings = self.view_embedder(-rays.dirs)
 
         # input tensor with shape N x (self.pos_embed_dim + self.view_embed_dim + 1) 
         # e.g. N x (63 + 27 + 1) for pos basis size 10, view basis size 4
-        x = torch.cat((origin_embeddings, view_embeddings, rays_is_hit), dim=1) 
+        x = torch.cat((pos_embeddings, view_embeddings), dim=1) 
 
         bg_colors = torch.sigmoid(self.decoder_bgcolor(x))
 

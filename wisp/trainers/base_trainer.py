@@ -170,6 +170,7 @@ class BaseTrainer(ABC):
         self.using_wandb = using_wandb
 
     def init_dataloader(self):
+        print(self.dataset.data.keys())
         self.train_data_loader = DataLoader(self.dataset,
                                             batch_size=self.batch_size,
                                             collate_fn=default_collate,

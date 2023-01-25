@@ -122,6 +122,8 @@ def hashgrid(coords, resolutions, codebook_bitwidth, lod_idx, codebook):
         (torch.FloatTensor): Features of shape [batch, feature_dim]
     """
     batch, dim = coords.shape
+    if type(codebook[0])==torch.nn.ParameterDict:
+        codebook = [torch.cat([c['density'], c['codebookcolor']], dim=-1) for c in codebook]
     feats = HashGridInterpolate.apply(coords.contiguous(), resolutions,
                                       codebook_bitwidth, lod_idx, *[_c for _c in codebook])
     feature_dim = codebook[0].shape[1] * len(resolutions)

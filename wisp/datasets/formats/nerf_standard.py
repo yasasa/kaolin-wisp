@@ -60,10 +60,11 @@ def _load_standard_imgs(frame, root, mip=None):
 
     # For some reason instant-ngp allows missing images that exist in the transform but not in the data.
     # Handle this... also handles the above case well too.
-    def load_single_image(fpath, mip):
+    def load_single_image(fpath, mip, depth=False):
         if os.path.exists(fpath):
             img = imageio.imread(fpath)
-            img = skimage.img_as_float32(img)
+            if not depth:
+                img = skimage.img_as_float32(img)
             if mip is not None:
                 img = resize_mip(img, mip, interpolation=cv2.INTER_AREA)
             return img
@@ -73,7 +74,11 @@ def _load_standard_imgs(frame, root, mip=None):
             
     rgb = load_single_image(fpath, mip)
     if depth_fpath:
-        depth = torch.FloatTensor(load_single_image(depth_fpath, mip))
+        depth = torch.FloatTensor(load_single_image(depth_fpath, mip, depth=True))
+        if os.path.splitext(depth_fpath)[-1].lower() == '.png':
+            depth = depth[:, :, 0] + depth[:, :, 1] * 256 + depth[:, :, 2]*256*256
+            depth = depth / (256*256*256 - 1)
+            depth = depth * 1000 / 30.
     else:
         depth = None
     
@@ -307,7 +312,6 @@ def load_nerf_standard_data(root, split='train', bg_color='white', num_workers=-
     
     if len(depths) > 0:
         depths = depths / -ray_grids[..., -1] / aabb_scale
-        print(depths.shape, rays.origins.shape, rays.dirs.shape)
         positions = rays.origins + rays.dirs * depths[..., None]
         dist = positions.norm(dim=-1, keepdim=False)
         mask = dist > 1.

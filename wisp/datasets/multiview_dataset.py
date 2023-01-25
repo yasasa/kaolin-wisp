@@ -90,7 +90,6 @@ class MultiviewDataset(Dataset):
         if self.multiview_dataset_format == "standard":
             data = load_nerf_standard_data(self.root, split,
                                             bg_color=self.bg_color, num_workers=self.dataset_num_workers, mip=self.mip)
-            print(data.keys())
         elif self.multiview_dataset_format == "rtmv":
             if split == 'train':
                 data = load_rtmv_data(self.root, split,
@@ -109,8 +108,9 @@ class MultiviewDataset(Dataset):
                 
                 data["depths"] = data["depths"] * self.coords_scale
                 data["rays"].origins = (data["rays"].origins - self.coords_center) * self.coords_scale
-
         return data
+        
+
 
     def __len__(self):
         """Length of the dataset in number of rays.
@@ -125,7 +125,7 @@ class MultiviewDataset(Dataset):
         out['imgs'] = self.data["imgs"][idx]
         if "depths" in self.data:
             out['depths'] = self.data["depths"][idx]
-
+            
         if self.transform is not None:
             out = self.transform(out)
         
@@ -146,5 +146,6 @@ class MultiviewDataset(Dataset):
         out['imgs'] = self.data["imgs"][idx, ray_idx]
         if "depths" in self.data:
             out['depths'] = self.data["depths"][idx, ray_idx]
+        print(out['rays'].shape)
         
         return out

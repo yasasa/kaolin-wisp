@@ -85,8 +85,9 @@ class MultiviewTrainer(BaseTrainer):
                     loss += depth_loss
                     self.log_dict['depth_loss'] += depth_loss.item()
                     
-                sparsity_loss = 0 * torch.sum(rb.alpha[~hit]) * 1e-1
-    #            loss += sparsity_loss
+                sparsity_loss = torch.sum(rb.alpha[~hit]) * 1e-4
+                sparsity_loss -= torch.sum(rb.alpha[hit]) * 1e-4
+                loss += sparsity_loss
                 self.log_dict['sparsity_loss'] += sparsity_loss.item()
                 
                 
