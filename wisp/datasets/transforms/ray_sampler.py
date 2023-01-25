@@ -7,6 +7,7 @@
 # license agreement from NVIDIA CORPORATION & AFFILIATES is strictly prohibited.
 
 import torch
+import numpy as np
 
 
 class SampleRays:
@@ -17,9 +18,12 @@ class SampleRays:
     def __call__(self, inputs):
         if 'depths' in inputs:
             depths  = inputs['depths'].clone().squeeze()
-            depths[depths < 1e-4] = 1000
+            depths[depths < 1e-4] = 30.
             weights = 1. / depths
-            ray_idx = torch.multinomial(weights, self.num_samples, replacement=False).to(inputs['imgs'].device)
+            weights = weights / weights.sum()
+          # ray_idx = np.random.choice(weights.shape[0], self.num_samples, replace=False, p=weights.numpy())
+          # ray_idx = torch.from_numpy(ray_idx).to(inputs['imgs'].device).long()
+            ray_idx = torch.multinomial(weights, self.num_samples, replacement=True).to(inputs['imgs'].device)
         else:
             ray_idx = torch.randint(0, inputs['imgs'].shape[0], [self.num_samples],
             device=inputs['imgs'].device)
