@@ -265,13 +265,12 @@ class NeuralRadianceField(BaseNeuralField):
         '''
 
        # origin_embeddings = self.pos_embedder(rays_origins)
-        p = rays.origins + rays.dirs * rays.dist_max
-        pos_embeddings = self.pos_embedder(p)
+        pos_embeddings = self.pos_embedder(rays.origins)
         view_embeddings = self.view_embedder(-rays.dirs)
 
         # input tensor with shape N x (self.pos_embed_dim + self.view_embed_dim + 1) 
         # e.g. N x (63 + 27 + 1) for pos basis size 10, view basis size 4
-        x = torch.cat((pos_embeddings, view_embeddings), dim=1) 
+        x = torch.cat((pos_embeddings, view_embeddings, rays_is_hit), dim=1) 
 
         bg_colors = torch.sigmoid(self.decoder_bgcolor(x))
 
