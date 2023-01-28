@@ -62,7 +62,7 @@ at::Tensor hashgrid_interpolate_cuda(
 #endif  // WITH_CUDA
 }
 
-std::vector<at::Tensor> hashgrid_interpolate_backward_cuda(
+std::pair<at::Tensor, std::vector<at::Tensor>> hashgrid_interpolate_backward_cuda(
     at::Tensor coords,
     at::Tensor grad_output,
     std::vector<at::Tensor> codebook,
@@ -93,7 +93,7 @@ std::vector<at::Tensor> hashgrid_interpolate_backward_cuda(
                 resolution[i], i, num_lods, require_grad_coords,
                 coords, codebook[i], grad_output, grad_codebook[i], grad_coords);
     }
-    return grad_codebook;
+    return {grad_coords, grad_codebook};
 #else
     AT_ERROR(__func__);
 #endif  // WITH_CUDA

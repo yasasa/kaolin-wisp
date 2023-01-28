@@ -21,7 +21,7 @@ at::Tensor hashgrid_interpolate_cuda(
     std::vector<int32_t> resolution,
     int32_t codebook_bitwidth);
 
-std::vector<at::Tensor> hashgrid_interpolate_backward_cuda(
+std::pair<at::Tensor, std::vector<at::Tensor>> hashgrid_interpolate_backward_cuda(
     at::Tensor coords,
     at::Tensor grad_output,
     std::vector<at::Tensor> codebook,
