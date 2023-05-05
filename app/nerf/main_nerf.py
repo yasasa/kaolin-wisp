@@ -53,7 +53,7 @@ def parse_args():
     data_group.add_argument('--dataloader-num-workers', type=int, default=0,
                             help='Number of workers for dataloader.')
     data_group.add_argument('--bg-color', default='black' if is_interactive() else 'white',
-                            choices=['white', 'black'], help='Background color')
+                            choices=['white', 'black', 'random'], help='Background color')
     data_group.add_argument('--multiview-dataset-format', default='standard', choices=['standard', 'rtmv'],
                             help='Data format for the transforms')
     data_group.add_argument('--num-rays-sampled-per-img', type=int, default='4096',

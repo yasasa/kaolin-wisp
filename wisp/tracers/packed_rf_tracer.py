@@ -100,6 +100,9 @@ class PackedRFTracer(BaseTracer):
         
         if bg_color == 'white':
             rgb = torch.ones(N, 3, device=rays.origins.device)
+        elif bg_color == 'random':
+             bg_color = torch.rand(1).item()
+             rgb = bg_color * torch.ones(N, 3, device=rays.origins.device)
         else:
             rgb = torch.zeros(N, 3, device=rays.origins.device)
         hit = torch.zeros(N, device=rays.origins.device, dtype=torch.bool)
@@ -148,6 +151,8 @@ class PackedRFTracer(BaseTracer):
         # Populate the background
         if bg_color == 'white':
             color = (1.0-alpha) + ray_colors
+        elif bg_color == 'random':
+            color = (1.0 - alpha)*bg_color + ray_colors
         else:
             color = alpha * ray_colors
         rgb[ridx_hit] = color
