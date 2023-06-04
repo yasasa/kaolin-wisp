@@ -13,6 +13,36 @@ from wisp.core import WispModule
 
 from scipy.stats import ortho_group
 
+class IdentityDecoder(WispModule):
+    def __init__(self, 
+        input_dim,
+        input_lods,
+        feature_start,
+        output_dim, 
+    ):
+        super().__init__()
+        self.input_dim = input_dim
+        self.input_lods = input_lods
+        self.feature_start = feature_start
+        self.output_dim = output_dim
+
+    def forward(self, x, return_h=False):
+        x = x.view(-1, self.input_lods, self.input_dim)
+        x = x.mean(dim=-2)
+        return x[..., self.feature_start:self.feature_start + self.output_dim]
+
+    def name(self) -> str:
+        """ A human readable name for the given wisp module. """
+        return "IdentityDecoder"
+
+    def public_properties(self) -> Dict[str, Any]:
+        """ Wisp modules expose their public properties in a dictionary.
+        The purpose of this method is to give an easy table of outwards facing attributes,
+        for the purpose of logging, gui apps, etc.
+        """
+        return {
+        }
+        
 class BasicDecoder(WispModule):
     """Super basic but super useful MLP class.
     """

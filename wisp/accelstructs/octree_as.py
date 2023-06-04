@@ -252,7 +252,7 @@ class OctreeAS(BaseAS):
         # Sample points along 1D line
         # depth ~ (NUM_RAYS, NUM_SAMPLES)
         depth = torch.linspace(0, 1.0, num_samples, device=rays.origins.device)[None] + \
-                (torch.rand(rays.origins.shape[0], num_samples, device=rays.origins.device) / num_samples)
+                (torch.ones(rays.origins.shape[0], num_samples, device=rays.origins.device) / num_samples)
 
         # Normalize between near and far plane
         depth *= (rays.dist_max - rays.dist_min)

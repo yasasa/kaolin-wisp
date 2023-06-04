@@ -143,7 +143,7 @@ class NeRFSyntheticDataset(MultiviewDataset):
                 return os.path.isdir(train_path)
             else:
                 return False
-        except ValueError:
+        except ValueError as e:
             return False
 
     def _validate_and_find_transform(self) -> str:

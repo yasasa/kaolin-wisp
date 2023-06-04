@@ -11,34 +11,50 @@ logging:
 
 dataset:
     multiview_dataset_format: 'standard'
-    num_rays_sampled_per_img: 16355
-    mip: 2
+    num_rays_sampled_per_img: 10000
+    mip: 0
     bg_color: 'white'
 
 nef:
     hidden_dim: 64
-    num_layers: 2
+    num_layers: 1
     pos_embedder: 'none'
     position_input: False
-    view_embedder: 'positional'
-    view_multires: 4
+    view_embedder: 'none'
+    view_input: False
+    decoder_type: 'none'
 
 tracer:
     raymarch_type: 'ray'
     num_steps: 1024
 
 optimizer:
-    optimizer_type: 'rmsprop'
+    optimizer_type: 'adam'
     lr: 0.001
 
 trainer:
     epochs: 50
     batch_size: 1
     model_format: 'full'  # If loading a pretrained pipeline, 'full' = torch.load instead of torch.load_state_dict
-    valid_every: 20
+    valid_every: 50
     save_every: 10
     render_tb_every: 10
+    prune_every: 25 # iterations
 
+grid:
+    grid_type: 'HashGrid'
+    interpolation_type: 'linear'
+    multiscale_type: 'cat'
+    feature_dim: 4
+    feature_std: 0.01
+    feature_bias: 0.0
+    num_lods: 16
+    codebook_bitwidth: 19
+    tree_type: 'geometric'
+    min_grid_res: 16
+    max_grid_res: 256
+    blas_level: 7
+    
 # NOTE: These are OfflineRenderer definitions, used for validation. See WispState for interactive app definitions.
 renderer:
     render_batch: 4000

@@ -8,19 +8,31 @@
 
 parent: 'nerf_base.yaml'
 
+dataset:
+    num_rays_sampled_per_img: 4096
+    
 grid:
     grid_type: 'HashGrid'
     interpolation_type: 'linear'
     multiscale_type: 'cat'
-    feature_dim: 2
+    feature_dim: 4
     feature_std: 0.01
     feature_bias: 0.0
     num_lods: 16
-    codebook_bitwidth: 21
+    codebook_bitwidth: 23
     tree_type: 'geometric'
     min_grid_res: 16
-    max_grid_res: 2048
+    max_grid_res: 128
     blas_level: 7
 
+nef:
+    view_embedder: 'none'
+    color_decoder: 'none'
+    density_decoder: 'none'
+    pos_embedder: 'none'
+    
 trainer:
-    prune_every: 100 # iterations
+    prune_every: 10 # iterations
+  #  valid_only: True
+    
+    

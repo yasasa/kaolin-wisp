@@ -106,6 +106,8 @@ def parse_args():
                                  'used to track the occupancy status (bottom level acceleration structure).')
 
     nef_group = parser.add_argument_group('nef')
+    
+    nef_group.add_argument('--decoder-type', type=str, choices=['none', 'basic'], default='basic')
     nef_group.add_argument('--pos-embedder', type=str, choices=['none', 'identity', 'positional'],
                            default='positional',
                            help='MLP Decoder of neural field: Positional embedder used to encode input coordinates'
@@ -115,6 +117,9 @@ def parse_args():
                            help='MLP Decoder of neural field: Positional embedder used to encode view direction')
     nef_group.add_argument('--position-input', type=bool, default=False,
                            help='If True, position coords will be concatenated to the '
+                                'features / positional embeddings when fed into the decoder.')
+    nef_group.add_argument('--view-input', type=bool, default=True,
+                           help='If True, view coords will be concatenated to the '
                                 'features / positional embeddings when fed into the decoder.')
     nef_group.add_argument('--pos-multires', type=int, default=10,
                            help='MLP Decoder of neural field: Number of frequencies to use for positional encoding'
@@ -366,9 +371,11 @@ def load_neural_field(args, dataset: MultiviewDataset) -> BaseNeuralField:
         pos_embedder=args.pos_embedder,
         view_embedder=args.view_embedder,
         position_input=args.position_input,
+        view_input=args.view_input,
         pos_multires=args.pos_multires,
         view_multires=args.view_multires,
         activation_type=args.activation_type,
+        decoder_type=args.decoder_type,
         layer_type=args.layer_type,
         hidden_dim=args.hidden_dim,
         num_layers=args.num_layers,

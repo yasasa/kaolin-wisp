@@ -16,7 +16,7 @@ grid:
     feature_std: 0.01
     feature_bias: 0.0
     num_lods: 16
-    codebook_bitwidth: 21
+    codebook_bitwidth: 19
     tree_type: 'geometric'
     min_grid_res: 16
     max_grid_res: 2048
@@ -24,3 +24,4 @@ grid:
 
 trainer:
     prune_every: 100 # iterations
+    valid_only: True

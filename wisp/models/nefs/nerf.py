@@ -13,7 +13,7 @@ from wisp.models.nefs import BaseNeuralField
 from wisp.models.embedders import get_positional_embedder
 from wisp.models.layers import get_layer_class
 from wisp.models.activations import get_activation_class
-from wisp.models.decoders import BasicDecoder
+from wisp.models.decoders import BasicDecoder, IdentityDecoder
 from wisp.models.grids import BLASGrid, HashGrid
 
 class NeuralRadianceField(BaseNeuralField):
@@ -32,7 +32,9 @@ class NeuralRadianceField(BaseNeuralField):
                  pos_multires: int = 10,
                  view_multires: int = 4,
                  position_input: bool = False,
+                 view_input: bool = False,
                  # decoder args
+                 decoder_type: str = 'basic',
                  activation_type: str = 'relu',
                  layer_type: str = 'none',
                  hidden_dim: int = 128,
@@ -96,7 +98,7 @@ class NeuralRadianceField(BaseNeuralField):
         self.pos_embedder, self.pos_embed_dim = self.init_embedder(pos_embedder, pos_multires,
                                                                    include_input=position_input)
         self.view_embedder, self.view_embed_dim = self.init_embedder(view_embedder, view_multires,
-                                                                     include_input=True)
+                                                                     include_input=view_input)
 
         # Init Decoder
         self.activation_type = activation_type
@@ -104,7 +106,7 @@ class NeuralRadianceField(BaseNeuralField):
         self.hidden_dim = hidden_dim
         self.num_layers = num_layers
         self.decoder_density, self.decoder_color = \
-            self.init_decoders(activation_type, layer_type, num_layers, hidden_dim)
+            self.init_decoders(decoder_type, activation_type, layer_type, num_layers, hidden_dim)
 
         self.prune_density_decay = prune_density_decay
         self.prune_min_density = prune_min_density
@@ -124,27 +126,33 @@ class NeuralRadianceField(BaseNeuralField):
             raise NotImplementedError(f'Unsupported embedder type for NeuralRadianceField: {embedder_type}')
         return embedder, embed_dim
 
-    def init_decoders(self, activation_type, layer_type, num_layers, hidden_dim):
+    def init_decoders(self, decoder_type, activation_type, layer_type, num_layers, hidden_dim):
         """Initializes the decoder object.
         """
-        decoder_density = BasicDecoder(input_dim=self.density_net_input_dim(),
-                                       output_dim=16,
-                                       activation=get_activation_class(activation_type),
-                                       bias=True,
-                                       layer=get_layer_class(layer_type),
-                                       num_layers=num_layers,
-                                       hidden_dim=hidden_dim,
-                                       skip=[])
-        decoder_density.lout.bias.data[0] = 1.0
+        if decoder_type == 'basic':
+            decoder_density = BasicDecoder(input_dim=self.density_net_input_dim(),
+                                           output_dim=16,
+                                           activation=get_activation_class(activation_type),
+                                           bias=True,
+                                           layer=get_layer_class(layer_type),
+                                           num_layers=num_layers,
+                                           hidden_dim=hidden_dim,
+                                           skip=[])
+            decoder_density.lout.bias.data[0] = 1.0
 
-        decoder_color = BasicDecoder(input_dim=self.color_net_input_dim(),
-                                     output_dim=3,
-                                     activation=get_activation_class(activation_type),
-                                     bias=True,
-                                     layer=get_layer_class(layer_type),
-                                     num_layers=num_layers + 1,
-                                     hidden_dim=hidden_dim,
-                                     skip=[])
+            decoder_color = BasicDecoder(input_dim=self.color_net_input_dim(),
+                                         output_dim=3,
+                                         activation=get_activation_class(activation_type),
+                                         bias=True,
+                                         layer=get_layer_class(layer_type),
+                                         num_layers=num_layers + 1,
+                                         hidden_dim=hidden_dim,
+                                         skip=[])
+        else:
+            decoder_density = IdentityDecoder(self.grid.feature_dim,
+                                               self.grid.num_lods if self.grid.multiscale_type == 'cat' else 1, 0, 4)
+            decoder_color = IdentityDecoder(self.grid.feature_dim, 
+                                            1, 1, 3)
         return decoder_density, decoder_color
 
     def prune(self):

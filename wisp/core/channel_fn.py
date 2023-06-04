@@ -173,9 +173,11 @@ def blend_alpha_composite_over(c1: torch.Tensor, c2: torch.Tensor, alpha1: torch
         (torch.Tensor): Blended channel in the shape of c1
     """
     alpha_out = alpha1 + alpha2 * (1.0 - alpha1)
+    alpha_out = alpha_out.clamp(min=1e-4)
     c_out = torch.where(condition=alpha_out > 0,
                         input=(c1 * alpha1 + c2 * alpha2 * (1.0 - alpha1)) / alpha_out,
                         other=torch.zeros_like(c1))
+   # print(torch.isnan(c_out).any(), torch.isinf(c_out).any(), print())
     return c_out
 
 

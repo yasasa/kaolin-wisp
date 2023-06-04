@@ -80,20 +80,27 @@ class HashGrid(BLASGrid):
         self.register_buffer("codebook_lod_first_idx", torch.zeros(self.num_lods, dtype=torch.int32))
         
 
-        self.codebook = []
+        self.codebook_color = []
+        self.codebook_density = []
 
         offset = 0
         for lod, res in enumerate(resolutions):
             num_pts = res ** 3
             fts = torch.zeros(min(self.codebook_size, num_pts), self.feature_dim)
             fts += torch.randn_like(fts) * self.feature_std
-            self.codebook.append(fts)
+            self.codebook_color.append(fts[..., 1:])
+            self.codebook_density.append(fts[..., :1])
             self.codebook_lod_sizes[lod] = fts.shape[0]
             self.codebook_lod_first_idx[lod] = offset
 
             offset += fts.shape[0]
-        self.codebook = nn.Parameter(torch.cat(self.codebook, dim=0))
-
+        self.codebook_color = nn.Parameter(torch.cat(self.codebook_color, dim=0))
+        self.codebook_density = nn.Parameter(torch.cat(self.codebook_density, dim=0))
+        
+    @property
+    def codebook(self):
+        return torch.cat([self.codebook_density, self.codebook_color], dim=-1)
+        
     @classmethod
     def from_octree(cls,
                     feature_dim        : int,
