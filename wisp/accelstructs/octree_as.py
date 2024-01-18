@@ -236,7 +236,7 @@ class OctreeAS(BaseAS):
         # depth ~ (NUM_RAYS, NUM_SAMPLES)
         offsets = (torch.rand(rays.origins.shape[0], num_samples, device=rays.origins.device) / num_samples)
         
-#        offsets = (0.5*torch.ones(rays.origins.shape[0], num_samples, device=rays.origins.device) / num_samples)
+   #     offsets = (0.5*torch.ones(rays.origins.shape[0], num_samples, device=rays.origins.device) / num_samples)
 
 
         depth = torch.linspace(0, 1.0, num_samples, device=rays.origins.device)[None] + offsets
